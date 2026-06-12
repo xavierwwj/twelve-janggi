@@ -4,26 +4,24 @@
 
 Rules follow [The Genius wiki](https://the-genius-show.fandom.com/wiki/Twelve_Janggi).
 
-## Run
+## Play
 
-Python 3 only, no dependencies:
+The whole game is one static file — **just open `index.html` in a browser**. No server, no install. The rules engine, the AI, and saved-game persistence (localStorage) all run inside the page.
 
-```sh
-python3 server.py          # default port 8943
-```
-
-Then open <http://localhost:8943>. To play on your phone over the same Wi-Fi, open `http://<your-laptop-ip>:8943`.
+To play on your phone, host the file anywhere static, e.g. **GitHub Pages**: push this repo to GitHub, enable Settings → Pages → deploy from `master` (root), then open the URL on your phone. Add it to your home screen and it behaves like an app.
 
 ## Modes
 
 - **2 Players** — over the board; the top player's pieces and tray are rotated 180° so you can lay a phone flat between you.
 - **vs AI** — you play Green (초, bottom), the AI plays Red (홍, top). Choose who moves first and an AI level (Easy / Normal / Hard).
 
+The AI is negamax (minimax) with alpha-beta pruning and time-limited iterative deepening: Easy is shallow with some randomness, Normal thinks for ~1s, Hard for ~2.5s.
+
 ## How to play
 
 - Tap a piece to see its legal moves (green dot = move, red outline = capture), then tap the destination.
 - Tap a captured piece in your tray, then tap an empty square to drop it.
-- `↺` opens the menu, `?` shows the rules.
+- `↺` opens the menu, `?` shows the rules. A game in progress survives closing the page.
 
 ## Rules
 
@@ -46,13 +44,10 @@ The red dots on each tile show its move directions.
   2. Move your own 王 into the opponent's territory and survive your opponent's next move.
   3. Your opponent has no legal move (house rule; practically unreachable).
 
-## Architecture
+## Code layout
 
 | File | Role |
 |------|------|
-| `game.py` | Pure rules engine — board state, legal moves, promotion, the try rule, win detection. |
-| `ai.py` | AI opponent: negamax + alpha-beta pruning with time-limited iterative deepening over `game.py`. |
-| `server.py` | Stdlib-only HTTP server: serves the static UI and a small JSON API (`/api/new`, `/api/move`, `/api/ai`, `/api/state`). |
-| `index.html` | The entire UI — rendering, taps, and move hints; the server stays authoritative on rules. |
-
-The server keeps one game in memory, so it hosts one match at a time (perfect for over-the-board or vs-AI play).
+| `index.html` | The entire playable game: UI + rules engine + negamax AI, all client-side. |
+| `game.py` / `ai.py` | Python mirror of the same engine and AI — handy for batch experiments (self-play, eval tuning) without a browser. |
+| `server.py` | Optional stdlib HTTP server exposing the Python engine as a JSON API. Not needed to play. |
