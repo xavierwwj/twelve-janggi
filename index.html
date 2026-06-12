@@ -248,8 +248,13 @@
   /* rules */
   #rulesCard { font-size: 14px; line-height: 1.55; width: min(92vw, 460px); }
   #rulesCard h2 { margin-top: 0; font-size: 18px; }
+  #rulesCard h3 { margin: 14px 0 6px; font-size: 14px; color: #eab308; text-transform: uppercase; letter-spacing: 1px; }
   #rulesCard ul { padding-left: 18px; margin: 8px 0; }
-  #rulesCard b.h { font-size: 16px; }
+  #rulesCard ol { padding-left: 20px; margin: 8px 0; }
+  #rulesCard table { border-collapse: collapse; width: 100%; margin: 8px 0; }
+  #rulesCard th, #rulesCard td { border: 1px solid #57493f; padding: 5px 8px; text-align: left; }
+  #rulesCard th { background: #3a2c24; font-size: 13px; }
+  #rulesCard td.pc { font-size: 20px; font-weight: 700; text-align: center; white-space: nowrap; }
 </style>
 </head>
 <body>
@@ -302,22 +307,45 @@
 <div id="rulesModal" class="modal hidden">
   <div class="card" id="rulesCard">
     <h2>Twelve Janggi 십이장기</h2>
+
+    <h3>How to play</h3>
+    <ul>
+      <li>Tap a piece to see its legal moves (<b style="color:#4ade80">green dot</b> = move,
+        <b style="color:#f87171">red outline</b> = capture), then tap the destination.</li>
+      <li>Tap a captured piece in your tray, then tap an empty square to drop it.</li>
+    </ul>
+
+    <h3>Setup</h3>
     <ul>
       <li>3×4 board. The row nearest each player is their <b>territory</b>. Each side starts with
-        <b>相</b> minister, <b>王</b> king, <b>將</b> general on their territory row and a <b>子</b> man in front of the king.</li>
-      <li><b class="h">王</b> king — 1 step in any direction.<br>
-          <b class="h">將</b> general — 1 step up / down / left / right.<br>
-          <b class="h">相</b> minister — 1 step diagonally.<br>
-          <b class="h">子</b> man — 1 step forward.<br>
-          <b class="h">侯</b> feudal lord — 1 step in any direction except diagonally backward.<br>
-          The red dots on each piece show its move directions.</li>
-      <li>Moving onto an enemy piece captures it into your <b>hand</b> (a captured 侯 reverts to 子).</li>
-      <li>Instead of moving, you may <b>drop</b> a piece from your hand onto any empty square
-        <b>outside the opponent's territory</b>. Tap it in your hand, then tap a square.</li>
-      <li>A 子 that moves into the opponent's territory promotes to 侯.</li>
-      <li><b>Win</b> by capturing the enemy 王, or by moving your own 王 into the opponent's
-        territory and surviving your opponent's next move. A player with no legal move loses.</li>
+        相 · 王 · 將 on their territory row and a 子 in front of the king.</li>
     </ul>
+
+    <h3>Pieces</h3>
+    <table>
+      <tr><th>Piece</th><th>Name</th><th>Movement</th></tr>
+      <tr><td class="pc">王</td><td>king (왕)</td><td>1 step, any direction</td></tr>
+      <tr><td class="pc">將</td><td>general (장)</td><td>1 step orthogonally</td></tr>
+      <tr><td class="pc">相</td><td>minister (상)</td><td>1 step diagonally</td></tr>
+      <tr><td class="pc">子</td><td>man (자)</td><td>1 step forward</td></tr>
+      <tr><td class="pc">侯</td><td>feudal lord (후)</td><td>1 step any direction except diagonally backward</td></tr>
+    </table>
+    <p style="margin:6px 0">The red dots on each tile show its move directions.</p>
+
+    <h3>Captures &amp; drops</h3>
+    <ul>
+      <li>Moving onto an enemy piece captures it into your <b>hand</b> (a captured 侯 reverts to 子).</li>
+      <li>Instead of moving, you may <b>drop</b> a hand piece onto any empty square
+        <b>outside the opponent's territory</b>.</li>
+      <li>A 子 that moves into the opponent's territory promotes to 侯.</li>
+    </ul>
+
+    <h3>Win conditions</h3>
+    <ol>
+      <li>Capture the enemy 王.</li>
+      <li>Move your own 王 into the opponent's territory and survive your opponent's next move.</li>
+      <li>Your opponent has no legal move.</li>
+    </ol>
     <p style="text-align:center; margin-bottom:0">
       <button id="closeRulesBtn" class="menu-btn" style="display:inline-block;width:auto;padding:9px 26px">Close</button>
     </p>
@@ -392,6 +420,8 @@ async function post(path, body) {
 
 async function refresh() {
   S = await (await fetch('/api/state')).json();
+  // after a reload mid-game, let the player close the menu and resume
+  $('resumeBtn').classList.toggle('hidden', !S || S.winner !== null);
   render();
 }
 
