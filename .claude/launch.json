@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "twelve-janggi",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["server.py", "8943"],
+      "port": 8943
+    }
+  ]
+}

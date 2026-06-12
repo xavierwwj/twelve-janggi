@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#1c1917">
+<title>Twelve Janggi 십이장기</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: #2a1d18;
+    color: #eee;
+    font-family: system-ui, -apple-system, sans-serif;
+    height: 100vh;
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    touch-action: manipulation;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+  }
+  #app {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 10px;
+    min-height: 0;
+  }
+
+  /* ---- hand bars ---- */
+  .hand-bar {
+    width: min(94vw, 420px);
+    min-height: 58px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    border-radius: 12px;
+    border: 2px solid #463a33;
+    background: #332620;
+    transition: border-color .2s, box-shadow .2s;
+  }
+  .hand-bar.active { border-color: #eab308; box-shadow: 0 0 14px rgba(234,179,8,.35); }
+  .hand-bar.flipped { transform: rotate(180deg); }
+  .player-chip {
+    font-weight: 700;
+    font-size: 14px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    white-space: nowrap;
+  }
+  .player-chip.c0 { background: #14532d; color: #bbf7d0; }
+  .player-chip.c1 { background: #7f1d1d; color: #fecaca; }
+  .hand-pieces { flex: 1; display: flex; gap: 6px; flex-wrap: wrap; }
+  .turn-tag { font-size: 12px; color: #eab308; font-weight: 600; white-space: nowrap; visibility: hidden; }
+  .hand-bar.active .turn-tag { visibility: visible; }
+
+  /* ---- board ---- */
+  #board {
+    display: grid;
+    grid-template-rows: repeat(4, 1fr);
+    grid-template-columns: repeat(3, 1fr);
+    width: min(92vw, calc((100dvh - 220px) * 0.75), 380px);
+    aspect-ratio: 3 / 4;
+    gap: 5px;
+    padding: 8px;
+    background: #5c3d1e;
+    border: 4px solid #41290f;
+    border-radius: 14px;
+    box-shadow: 0 6px 24px rgba(0,0,0,.5);
+  }
+  .cell {
+    background: #cfa873;
+    border-radius: 6px;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+  }
+  .cell.zone0 { box-shadow: inset 0 0 0 2px rgba(22,101,52,.4); }
+  .cell.zone1 { box-shadow: inset 0 0 0 2px rgba(153,27,27,.4); }
+  .cell.last { outline: 3px solid rgba(234,179,8,.55); outline-offset: -3px; }
+  .cell.selected { outline: 3px solid #eab308; outline-offset: -3px; }
+  .cell.legal::after {
+    content: '';
+    position: absolute;
+    width: 26%; height: 26%;
+    border-radius: 50%;
+    background: rgba(22,101,52,.5);
+  }
+  .cell.capture { outline: 3px solid #dc2626; outline-offset: -3px; }
+
+  /* ---- pieces (white tiles, black hanja, red move dots — like the show) ---- */
+  .piece {
+    width: 88%; height: 88%;
+    border-radius: 7px;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 5px rgba(0,0,0,.45);
+    background: linear-gradient(165deg, #fdfaf2, #ece2cb);
+    color: #1c1917;
+  }
+  .piece.p0 { border: 2.5px solid #166534; }
+  .piece.p1 { border: 2.5px solid #991b1b; }
+  .piece.flip { transform: rotate(180deg); }
+  .piece.king.p0 { background: linear-gradient(165deg, #1f8a45, #14532d); color: #fff; }
+  .piece.king.p1 { background: linear-gradient(165deg, #c22b2b, #7f1d1d); color: #fff; }
+  .piece .hanja { font-size: clamp(18px, 7.5vmin, 40px); font-weight: 700; line-height: 1; }
+  .piece .kor { font-size: clamp(8px, 2.4vmin, 12px); font-weight: 600; opacity: .7; }
+  .piece .dot {
+    position: absolute;
+    width: 9%; height: 9%;
+    min-width: 4px; min-height: 4px;
+    border-radius: 50%;
+    background: #c0392b;
+    transform: translate(-50%, -50%);
+  }
+  .piece.king .dot { background: rgba(255,255,255,.9); }
+
+  /* hand (captured) pieces */
+  .hand-piece {
+    width: clamp(36px, 9vmin, 48px);
+    height: clamp(36px, 9vmin, 48px);
+    border-radius: 7px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: clamp(18px, 5vmin, 26px);
+    font-weight: 700;
+    background: linear-gradient(165deg, #fdfaf2, #ece2cb);
+    color: #1c1917;
+    box-shadow: 0 2px 4px rgba(0,0,0,.4);
+    cursor: pointer;
+  }
+  .hand-piece.p0 { border: 2.5px solid #166534; }
+  .hand-piece.p1 { border: 2.5px solid #991b1b; }
+  .hand-piece.selected { outline: 3px solid #eab308; outline-offset: 1px; }
+
+  /* ---- corner buttons ---- */
+  .corner-btn {
+    position: fixed;
+    bottom: 12px;
+    width: 40px; height: 40px;
+    border-radius: 50%;
+    border: 1px solid #57493f;
+    background: #3a2c24;
+    color: #d6d3d1;
+    font-size: 17px;
+    cursor: pointer;
+    z-index: 20;
+  }
+  #menuBtn { left: 12px; }
+  #rulesBtn { right: 12px; }
+
+  /* ---- modals ---- */
+  .modal {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,.82);
+    z-index: 30;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 18px;
+  }
+  .modal.hidden { display: none; }
+  .card {
+    background: #332620;
+    border: 1px solid #57493f;
+    border-radius: 16px;
+    padding: 22px 24px;
+    width: min(92vw, 380px);
+    max-height: 85dvh;
+    overflow-y: auto;
+  }
+
+  /* menu */
+  #menuCard { text-align: center; }
+  #menuCard h1 { margin: 0; font-size: 32px; letter-spacing: 6px; }
+  #menuCard .sub { margin: 2px 0 18px; color: #c8b8a8; font-size: 14px; }
+  .menu-btn {
+    display: block;
+    width: 100%;
+    margin: 10px 0;
+    padding: 13px;
+    font-size: 16px;
+    font-weight: 700;
+    border: none;
+    border-radius: 10px;
+    background: #eab308;
+    color: #1c1917;
+    cursor: pointer;
+  }
+  .menu-btn.alt { background: #4a3a2f; color: #f1e8dc; }
+  .seg { display: flex; gap: 6px; margin-top: 14px; justify-content: center; }
+  .seg span { font-size: 13px; color: #c8b8a8; align-self: center; margin-right: 4px; }
+  .seg button {
+    padding: 7px 14px;
+    font-size: 13px;
+    font-weight: 600;
+    border-radius: 999px;
+    border: 1px solid #57493f;
+    background: transparent;
+    color: #d6d3d1;
+    cursor: pointer;
+  }
+  .seg button.on { background: #eab308; color: #1c1917; border-color: #eab308; }
+  #resumeBtn { margin-top: 16px; background: none; border: none; color: #c8b8a8; font-size: 14px; cursor: pointer; text-decoration: underline; }
+  #resumeBtn.hidden { display: none; }
+
+  /* win overlay */
+  #overlay {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,.78);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: space-around;
+    z-index: 25;
+  }
+  #overlay.hidden { display: none; }
+  .win-msg { font-size: clamp(20px, 6vmin, 32px); font-weight: 800; text-align: center; padding: 0 16px; }
+  .win-msg.flipped { transform: rotate(180deg); }
+  .win-msg.hidden { visibility: hidden; }
+  .win-msg.w0 { color: #86efac; }
+  .win-msg.w1 { color: #fca5a5; }
+  #overlay .row { display: flex; gap: 12px; }
+  #overlay button {
+    font-size: 17px;
+    font-weight: 700;
+    padding: 12px 26px;
+    border-radius: 999px;
+    border: none;
+    cursor: pointer;
+  }
+  #againBtn { background: #eab308; color: #1c1917; }
+  #changeBtn { background: #4a3a2f; color: #f1e8dc; }
+
+  /* rules */
+  #rulesCard { font-size: 14px; line-height: 1.55; width: min(92vw, 460px); }
+  #rulesCard h2 { margin-top: 0; font-size: 18px; }
+  #rulesCard ul { padding-left: 18px; margin: 8px 0; }
+  #rulesCard b.h { font-size: 16px; }
+</style>
+</head>
+<body>
+
+<div id="app">
+  <div class="hand-bar" id="bar1">
+    <span class="player-chip c1" id="chip1">홍 Red</span>
+    <div class="hand-pieces" id="handPieces1"></div>
+    <span class="turn-tag" id="tag1">▶ your turn</span>
+  </div>
+
+  <div id="board"></div>
+
+  <div class="hand-bar" id="bar0">
+    <span class="player-chip c0" id="chip0">초 Green</span>
+    <div class="hand-pieces" id="handPieces0"></div>
+    <span class="turn-tag" id="tag0">▶ your turn</span>
+  </div>
+</div>
+
+<button class="corner-btn" id="menuBtn" title="New game / mode">↺</button>
+<button class="corner-btn" id="rulesBtn" title="Rules">?</button>
+
+<div id="menu" class="modal">
+  <div class="card" id="menuCard">
+    <h1>십이장기</h1>
+    <div class="sub">Twelve Janggi</div>
+    <button class="menu-btn" id="btnPvp">👥 &nbsp;2 Players</button>
+    <button class="menu-btn alt" id="btnAiYou">🤖 &nbsp;vs AI — you move first</button>
+    <button class="menu-btn alt" id="btnAiFirst">🤖 &nbsp;vs AI — AI moves first</button>
+    <div class="seg" id="levelSeg">
+      <span>AI level</span>
+      <button data-level="easy">Easy</button>
+      <button data-level="normal" class="on">Normal</button>
+      <button data-level="hard">Hard</button>
+    </div>
+    <button id="resumeBtn" class="hidden">resume game</button>
+  </div>
+</div>
+
+<div id="overlay" class="hidden">
+  <div class="win-msg flipped" id="winMsgTop"></div>
+  <div class="row">
+    <button id="againBtn">Play again</button>
+    <button id="changeBtn">Menu</button>
+  </div>
+  <div class="win-msg" id="winMsgBottom"></div>
+</div>
+
+<div id="rulesModal" class="modal hidden">
+  <div class="card" id="rulesCard">
+    <h2>Twelve Janggi 십이장기</h2>
+    <ul>
+      <li>3×4 board. The row nearest each player is their <b>territory</b>. Each side starts with
+        <b>相</b> minister, <b>王</b> king, <b>將</b> general on their territory row and a <b>子</b> man in front of the king.</li>
+      <li><b class="h">王</b> king — 1 step in any direction.<br>
+          <b class="h">將</b> general — 1 step up / down / left / right.<br>
+          <b class="h">相</b> minister — 1 step diagonally.<br>
+          <b class="h">子</b> man — 1 step forward.<br>
+          <b class="h">侯</b> feudal lord — 1 step in any direction except diagonally backward.<br>
+          The red dots on each piece show its move directions.</li>
+      <li>Moving onto an enemy piece captures it into your <b>hand</b> (a captured 侯 reverts to 子).</li>
+      <li>Instead of moving, you may <b>drop</b> a piece from your hand onto any empty square
+        <b>outside the opponent's territory</b>. Tap it in your hand, then tap a square.</li>
+      <li>A 子 that moves into the opponent's territory promotes to 侯.</li>
+      <li><b>Win</b> by capturing the enemy 王, or by moving your own 王 into the opponent's
+        territory and surviving your opponent's next move. A player with no legal move loses.</li>
+    </ul>
+    <p style="text-align:center; margin-bottom:0">
+      <button id="closeRulesBtn" class="menu-btn" style="display:inline-block;width:auto;padding:9px 26px">Close</button>
+    </p>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+const ROWS = 4, COLS = 3;
+const HANJA = { wang: '王', jang: '將', sang: '相', ja: '子', hu: '侯' };
+const KOR   = { wang: '왕', jang: '장', sang: '상', ja: '자', hu: '후' };
+
+// move directions for player 0 (bottom, forward = -1 row); mirrors game.py
+const MOVES = {
+  wang: [[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]],
+  jang: [[-1,0],[1,0],[0,-1],[0,1]],
+  sang: [[-1,-1],[-1,1],[1,-1],[1,1]],
+  ja:   [[-1,0]],
+  hu:   [[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,0]],
+};
+
+const $ = id => document.getElementById(id);
+const goalRow = owner => owner === 0 ? 0 : ROWS - 1;
+
+let S = null;            // authoritative state from the server
+let selected = null;     // {kind:'board', idx} | {kind:'hand', handIdx}
+let busy = false;        // a request is in flight
+let thinking = false;    // AI is computing
+let level = 'normal';
+let lastConfig = null;   // {mode, first} for "play again"
+
+/* ---------- client-side move hints (server stays authoritative) ---------- */
+
+function dirsFor(type, owner) {
+  return owner === 0 ? MOVES[type] : MOVES[type].map(([r, c]) => [-r, -c]);
+}
+
+function movesFrom(idx) {
+  const p = S.board[idx];
+  if (!p) return [];
+  const r = Math.floor(idx / COLS), c = idx % COLS, out = [];
+  for (const [dr, dc] of dirsFor(p.type, p.owner)) {
+    const nr = r + dr, nc = c + dc;
+    if (nr < 0 || nr >= ROWS || nc < 0 || nc >= COLS) continue;
+    const t = S.board[nr * COLS + nc];
+    if (t && t.owner === p.owner) continue;
+    out.push(nr * COLS + nc);
+  }
+  return out;
+}
+
+function dropIdxs(player) {
+  const out = [];
+  for (let i = 0; i < ROWS * COLS; i++) {
+    if (!S.board[i] && Math.floor(i / COLS) !== goalRow(player)) out.push(i);
+  }
+  return out;
+}
+
+/* ---------- server API ---------- */
+
+async function post(path, body) {
+  const r = await fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body || {}),
+  });
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+
+async function refresh() {
+  S = await (await fetch('/api/state')).json();
+  render();
+}
+
+async function startGame(mode, first) {
+  if (busy || thinking) return;
+  busy = true;
+  try {
+    S = await post('/api/new', { mode, first, level });
+    lastConfig = { mode, first };
+    selected = null;
+    $('menu').classList.add('hidden');
+  } finally { busy = false; }
+  render();
+  maybeAI();
+}
+
+async function maybeAI() {
+  if (!S || S.winner !== null || S.mode !== 'ai' || S.turn !== S.ai_player) return;
+  thinking = true;
+  render();
+  try { S = await post('/api/ai'); }
+  catch (e) { await refresh(); }
+  finally { thinking = false; }
+  render();
+}
+
+async function sendMove(payload) {
+  busy = true;
+  try { S = await post('/api/move', payload); selected = null; }
+  catch (e) { selected = null; await refresh(); }
+  finally { busy = false; }
+  render();
+  maybeAI();
+}
+
+/* ---------- interaction ---------- */
+
+function locked() {
+  return busy || thinking || !S || S.winner !== null
+      || (S.mode === 'ai' && S.turn === S.ai_player);
+}
+
+function onCell(i) {
+  if (locked()) return;
+  const p = S.board[i];
+  if (selected) {
+    if (selected.kind === 'board') {
+      if (i === selected.idx) { selected = null; render(); return; }
+      if (movesFrom(selected.idx).includes(i)) { sendMove({ from: selected.idx, to: i }); return; }
+    } else if (dropIdxs(S.turn).includes(i)) {
+      sendMove({ drop: S.hands[S.turn][selected.handIdx], to: i });
+      return;
+    }
+  }
+  selected = (p && p.owner === S.turn) ? { kind: 'board', idx: i } : null;
+  render();
+}
+
+function onHand(player, handIdx) {
+  if (locked() || player !== S.turn) return;
+  if (selected && selected.kind === 'hand' && selected.handIdx === handIdx) {
+    selected = null;
+  } else {
+    selected = { kind: 'hand', handIdx };
+  }
+  render();
+}
+
+/* ---------- rendering ---------- */
+
+function pieceEl(p, mini) {
+  const el = document.createElement('div');
+  if (mini) {
+    el.className = 'hand-piece p' + p.owner;
+    el.textContent = HANJA[p.type];
+    return el;
+  }
+  el.className = 'piece p' + p.owner
+    + (p.type === 'wang' ? ' king' : '')
+    + (p.owner === 1 ? ' flip' : '');
+  const h = document.createElement('span');
+  h.className = 'hanja';
+  h.textContent = HANJA[p.type];
+  const k = document.createElement('span');
+  k.className = 'kor';
+  k.textContent = KOR[p.type];
+  el.append(h, k);
+  // dots in the piece's own orientation; the CSS flip rotates them for player 1
+  for (const [dr, dc] of MOVES[p.type]) {
+    const dot = document.createElement('i');
+    dot.className = 'dot';
+    dot.style.left = (50 + dc * 41) + '%';
+    dot.style.top = (50 + dr * 41) + '%';
+    el.appendChild(dot);
+  }
+  return el;
+}
+
+function render() {
+  if (!S) return;
+  const boardEl = $('board');
+  boardEl.innerHTML = '';
+  let legal = [];
+  if (selected) {
+    legal = selected.kind === 'board' ? movesFrom(selected.idx) : dropIdxs(S.turn);
+  }
+  for (let i = 0; i < ROWS * COLS; i++) {
+    const cell = document.createElement('div');
+    cell.className = 'cell';
+    cell.dataset.idx = i;
+    const r = Math.floor(i / COLS);
+    if (r === 0) cell.classList.add('zone1');
+    if (r === ROWS - 1) cell.classList.add('zone0');
+    if (S.last && S.last.includes(i)) cell.classList.add('last');
+    if (selected && selected.kind === 'board' && selected.idx === i) cell.classList.add('selected');
+    if (legal.includes(i)) cell.classList.add(S.board[i] ? 'capture' : 'legal');
+    if (S.board[i]) cell.appendChild(pieceEl(S.board[i], false));
+    cell.addEventListener('click', () => onCell(i));
+    boardEl.appendChild(cell);
+  }
+
+  const isAi = S.mode === 'ai';
+  $('bar1').classList.toggle('flipped', !isAi);
+  $('chip1').textContent = isAi ? '🤖 AI · 홍 Red' : '홍 Red';
+  $('tag0').textContent = '▶ your turn';
+  $('tag1').textContent = isAi ? (thinking ? '🤔 thinking…' : '▶ AI turn') : '▶ your turn';
+
+  for (const player of [0, 1]) {
+    $('bar' + player).classList.toggle('active', S.winner === null && S.turn === player);
+    const handEl = $('handPieces' + player);
+    handEl.innerHTML = '';
+    S.hands[player].forEach((type, hi) => {
+      const el = pieceEl({ type, owner: player }, true);
+      if (selected && selected.kind === 'hand' && S.turn === player && selected.handIdx === hi) {
+        el.classList.add('selected');
+      }
+      el.addEventListener('click', () => onHand(player, hi));
+      handEl.appendChild(el);
+    });
+  }
+
+  const overlay = $('overlay');
+  if (S.winner !== null) {
+    const name = S.winner === 0 ? '초 Green' : (isAi ? '🤖 AI (Red)' : '홍 Red');
+    const why = {
+      capture: 'captured the King!',
+      reach: 'the King reached enemy territory!',
+      stuck: 'opponent has no legal move!',
+    }[S.reason] || '';
+    const msg = `${name} wins — ${why}`;
+    for (const id of ['winMsgTop', 'winMsgBottom']) {
+      const el = $(id);
+      el.textContent = msg;
+      el.classList.remove('w0', 'w1');
+      el.classList.add('w' + S.winner);
+    }
+    $('winMsgTop').classList.toggle('hidden', isAi);
+    overlay.classList.remove('hidden');
+  } else {
+    overlay.classList.add('hidden');
+  }
+}
+
+/* ---------- wiring ---------- */
+
+$('btnPvp').addEventListener('click', () => startGame('pvp', 0));
+$('btnAiYou').addEventListener('click', () => startGame('ai', 0));
+$('btnAiFirst').addEventListener('click', () => startGame('ai', 1));
+$('levelSeg').addEventListener('click', e => {
+  const btn = e.target.closest('button[data-level]');
+  if (!btn) return;
+  level = btn.dataset.level;
+  document.querySelectorAll('#levelSeg button').forEach(b => b.classList.toggle('on', b === btn));
+});
+$('resumeBtn').addEventListener('click', () => $('menu').classList.add('hidden'));
+$('menuBtn').addEventListener('click', () => {
+  $('resumeBtn').classList.toggle('hidden', !S || S.winner !== null);
+  $('menu').classList.remove('hidden');
+});
+$('againBtn').addEventListener('click', () => lastConfig && startGame(lastConfig.mode, lastConfig.first));
+$('changeBtn').addEventListener('click', () => {
+  $('overlay').classList.add('hidden');
+  $('resumeBtn').classList.add('hidden');
+  $('menu').classList.remove('hidden');
+});
+$('rulesBtn').addEventListener('click', () => $('rulesModal').classList.remove('hidden'));
+$('closeRulesBtn').addEventListener('click', () => $('rulesModal').classList.add('hidden'));
+
+refresh();  // draw the board behind the menu on load
+</script>
+</body>
+</html>
