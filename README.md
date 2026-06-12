@@ -1,27 +1,67 @@
 # Twelve Janggi 십이장기
 
-**Twelve Janggi** (십이장기) from *The Genius: Black Garnet* — a Dobutsu Shogi variant on a 3×4 board. Play 2-player over-the-board on one device, or against a built-in AI. Works in any modern browser on phones and laptops.
+**Twelve Janggi** (십이장기) from *The Genius: Black Garnet* — a Dobutsu Shogi variant on a 3×4 board. Play 2-player over-the-board on one device, or against a built-in AI. Works in any modern browser on phones and laptops; rules follow [The Genius wiki](https://the-genius-show.fandom.com/wiki/Twelve_Janggi).
 
-Rules follow [The Genius wiki](https://the-genius-show.fandom.com/wiki/Twelve_Janggi).
+The repo doubles as a small **framework for two-player turn-based games**: the rules engine, the search AI, and the UI are separate layers that talk through a documented API, in both JavaScript (for play) and Python (for experiments / future RL training).
 
 ## Play
 
-The whole game is one static file — **just open `index.html` in a browser**. No server, no install. The rules engine, the AI, and saved-game persistence (localStorage) all run inside the page.
+The game is fully static — **open `index.html` in a browser** (or serve the folder with any static host). No backend. Saved games persist in localStorage.
 
-To play on your phone, host the file anywhere static, e.g. **GitHub Pages**: push this repo to GitHub, enable Settings → Pages → deploy from `master` (root), then open the URL on your phone. Add it to your home screen and it behaves like an app.
-
-## Modes
+On a phone, use the GitHub Pages deployment of this repo, and "Add to Home Screen" for an app-like experience.
 
 - **2 Players** — over the board; the top player's pieces and tray are rotated 180° so you can lay a phone flat between you.
-- **vs AI** — you play Green (초, bottom), the AI plays Red (홍, top). Choose who moves first and an AI level (Easy / Normal / Hard).
+- **vs AI** — you play Green (초, bottom), the AI plays Red (홍, top). Pick who moves first and a level (Easy / Normal / Hard).
 
-The AI is negamax (minimax) with alpha-beta pruning and time-limited iterative deepening: Easy is shallow with some randomness, Normal thinks for ~1s, Hard for ~2.5s.
+## Architecture
 
-## How to play
+```
+index.html                   UI for Twelve Janggi (rendering + input only)
+core/negamax.js              generic negamax agent — works with ANY engine
+games/twelve-janggi/engine.js  the Twelve Janggi engine (implements the API)
 
-- Tap a piece to see its legal moves (green dot = move, red outline = capture), then tap the destination.
-- Tap a captured piece in your tray, then tap an empty square to drop it.
-- `↺` opens the menu, `?` shows the rules. A game in progress survives closing the page.
+py/engine_api.py             the engine API contract (documented Protocol)
+py/negamax.py                generic negamax agent (mirror of core/negamax.js)
+py/twelve_janggi.py          engine (mirror of games/twelve-janggi/engine.js)
+py/selfplay.py               agent-vs-agent harness — seed of an RL training loop
+```
+
+### The engine API
+
+An **engine** is an object/module that owns all game knowledge. Agents and tooling only ever call:
+
+| Function | Contract |
+|----------|----------|
+| `initialState(first)` | fresh game state with player `first` (0/1) to move |
+| `cloneState(state)` | independent copy, safe to mutate |
+| `legalMoves(state)` | all legal moves for `state.turn`; moves are **opaque** to callers |
+| `applyMove(state, move)` | mutate: perform move, advance `turn`, set `winner` when the game ends |
+| `evaluate(state, player)` | finite heuristic for non-terminal states, from `player`'s perspective |
+| `orderMoves(state, moves)` | *(optional)* best-first hint for alpha-beta cutoffs |
+
+States expose exactly two fields to non-engine code: `turn` (0 or 1) and `winner` (`null`/`None` while running). Everything else — board shape, hands, special rules — is private to the engine.
+
+### Agents
+
+`core/negamax.js` / `py/negamax.py` implement minimax (negamax form) with alpha-beta pruning and time-limited iterative deepening, parameterised by `{maxDepth, timeMs, randomMargin}`. They contain **zero game knowledge** — point them at any engine implementing the API.
+
+`py/selfplay.py` pits two agent configurations against each other through the same API:
+
+```sh
+cd py && python3 selfplay.py --games 20 --p0 blitz --p1 normal
+```
+
+### Adding a new game
+
+1. Write `games/<name>/engine.js` implementing the six API functions (and `py/<name>.py` if you want Python-side experiments).
+2. Write a UI page for it that calls the engine for state/moves and `Negamax.chooseMove(engine, state, opts)` for the computer player.
+3. That's it — the agents and self-play tooling work unchanged.
+
+### RL roadmap
+
+Training belongs in Python (the `py/` mirror exists for exactly this): self-play with `twelve_janggi.py`, learn a policy/value net, then export the trained weights (JSON/ONNX) and run inference in the browser — the page stays static. The API will grow two per-game functions when needed: `encode_state(state, player)` (feature vector) and a fixed move indexing (`move_index`/`index_move`).
+
+**Keep the JS and Python engines rule-identical** — they are deliberate line-for-line mirrors; any rule change must land in both.
 
 ## Rules
 
@@ -43,11 +83,3 @@ The red dots on each tile show its move directions.
   1. Capture the enemy 王.
   2. Move your own 王 into the opponent's territory and survive your opponent's next move.
   3. Your opponent has no legal move (house rule; practically unreachable).
-
-## Code layout
-
-| File | Role |
-|------|------|
-| `index.html` | The entire playable game: UI + rules engine + negamax AI, all client-side. |
-| `game.py` / `ai.py` | Python mirror of the same engine and AI — handy for batch experiments (self-play, eval tuning) without a browser. |
-| `server.py` | Optional stdlib HTTP server exposing the Python engine as a JSON API. Not needed to play. |

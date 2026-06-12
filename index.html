@@ -352,240 +352,23 @@
   </div>
 </div>
 
+<script src="core/negamax.js"></script>
+<script src="games/twelve-janggi/engine.js"></script>
 <script>
 'use strict';
 
-/* ====================================================================
-   Engine — mirrors game.py. Everything runs in the browser; no server.
-   ==================================================================== */
+/* UI layer only. All rules live in games/twelve-janggi/engine.js (the engine
+   API), all search in core/negamax.js (generic agent). */
 
-const ROWS = 4, COLS = 3;
-const HANJA = { wang: '王', jang: '將', sang: '相', ja: '子', hu: '侯' };
-const KOR   = { wang: '왕', jang: '장', sang: '상', ja: '자', hu: '후' };
+const G = TwelveJanggi;
+const { ROWS, COLS, MOVES, HANJA, KOR } = G;
 
-// move directions for player 0 (bottom, forward = -1 row)
-const MOVES = {
-  wang: [[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]],
-  jang: [[-1,0],[1,0],[0,-1],[0,1]],
-  sang: [[-1,-1],[-1,1],[1,-1],[1,1]],
-  ja:   [[-1,0]],
-  hu:   [[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,0]],
-};
-
-const goalRow = owner => owner === 0 ? 0 : ROWS - 1;
-
-function initialState(first) {
-  const board = Array(ROWS * COLS).fill(null);
-  const put = (r, c, type, owner) => board[r * COLS + c] = { type, owner };
-  put(3, 0, 'sang', 0); put(3, 1, 'wang', 0); put(3, 2, 'jang', 0); put(2, 1, 'ja', 0);
-  put(0, 2, 'sang', 1); put(0, 1, 'wang', 1); put(0, 0, 'jang', 1); put(1, 1, 'ja', 1);
-  return {
-    board, hands: [[], []], turn: first,
-    pendingTry: null,   // player whose wang sits in enemy territory awaiting survival
-    winner: null, reason: null,
-  };
-}
-
-// piece objects are never mutated (promotion replaces them), so a shallow copy is safe
-function cloneState(st) {
-  return {
-    board: st.board.slice(),
-    hands: [st.hands[0].slice(), st.hands[1].slice()],
-    turn: st.turn, pendingTry: st.pendingTry,
-    winner: st.winner, reason: st.reason,
-  };
-}
-
-function dirsFor(type, owner) {
-  return owner === 0 ? MOVES[type] : MOVES[type].map(([r, c]) => [-r, -c]);
-}
-
-function pieceMovesAt(st, idx) {
-  const p = st.board[idx];
-  if (!p) return [];
-  const r = Math.floor(idx / COLS), c = idx % COLS, out = [];
-  for (const [dr, dc] of dirsFor(p.type, p.owner)) {
-    const nr = r + dr, nc = c + dc;
-    if (nr < 0 || nr >= ROWS || nc < 0 || nc >= COLS) continue;
-    const t = st.board[nr * COLS + nc];
-    if (t && t.owner === p.owner) continue;
-    out.push(nr * COLS + nc);
-  }
-  return out;
-}
-
-function dropIdxs(st, player) {
-  const out = [];
-  for (let i = 0; i < ROWS * COLS; i++) {
-    if (!st.board[i] && Math.floor(i / COLS) !== goalRow(player)) out.push(i);
-  }
-  return out;
-}
-
-// moves: {from, to} | {drop: type, to}
-function legalMovesOf(st) {
-  const player = st.turn, out = [];
-  for (let i = 0; i < ROWS * COLS; i++) {
-    const p = st.board[i];
-    if (p && p.owner === player) {
-      for (const to of pieceMovesAt(st, i)) out.push({ from: i, to });
-    }
-  }
-  if (st.hands[player].length) {
-    const empties = dropIdxs(st, player);
-    for (const type of new Set(st.hands[player])) {
-      for (const to of empties) out.push({ drop: type, to });
-    }
-  }
-  return out;
-}
-
-function hasMoveFor(st, player) {
-  if (st.hands[player].length && dropIdxs(st, player).length) return true;
-  return st.board.some((p, i) => p && p.owner === player && pieceMovesAt(st, i).length);
-}
-
-function applyMove(st, mv) {
-  const player = st.turn;
-  let kingCaptured = false;
-  if (mv.drop) {
-    const h = st.hands[player];
-    h.splice(h.indexOf(mv.drop), 1);
-    st.board[mv.to] = { type: mv.drop, owner: player };
-  } else {
-    const p = st.board[mv.from], cap = st.board[mv.to];
-    st.board[mv.to] = p;
-    st.board[mv.from] = null;
-    if (cap) {
-      if (cap.type === 'wang') kingCaptured = true;
-      st.hands[player].push(cap.type === 'hu' ? 'ja' : cap.type);
-    }
-    if (p.type === 'ja' && Math.floor(mv.to / COLS) === goalRow(player)) {
-      st.board[mv.to] = { type: 'hu', owner: player };
-    }
-  }
-
-  if (kingCaptured) { st.winner = player; st.reason = 'capture'; return; }
-  // opponent's wang entered our territory last turn and we failed to take it
-  if (st.pendingTry !== null && st.pendingTry !== player) {
-    st.winner = st.pendingTry; st.reason = 'reach'; return;
-  }
-  st.pendingTry = null;
-  for (let i = 0; i < ROWS * COLS; i++) {
-    const p = st.board[i];
-    if (p && p.type === 'wang' && p.owner === player && Math.floor(i / COLS) === goalRow(player)) {
-      st.pendingTry = player;
-      break;
-    }
-  }
-  st.turn = 1 - player;
-  if (!hasMoveFor(st, st.turn)) { st.winner = player; st.reason = 'stuck'; }
-}
-
-/* ====================================================================
-   AI — mirrors ai.py: negamax + alpha-beta, time-limited iterative
-   deepening, material/advancement evaluation.
-   ==================================================================== */
-
-const VAL = { ja: 10, sang: 30, jang: 34, hu: 46, wang: 0 };
-const HAND_VAL = { ja: 9, sang: 28, jang: 32 };
-const WIN_SCORE = 100000;
-
-// level -> [max depth, time budget ms, random margin]
+// agent presets (UI concern: how strong each menu option is)
 const LEVELS = {
-  easy:   [2,  500,  8],
-  normal: [8,  1000, 0],
-  hard:   [14, 2500, 0],
+  easy:   { maxDepth: 2,  timeMs: 500,  randomMargin: 8 },
+  normal: { maxDepth: 8,  timeMs: 1000 },
+  hard:   { maxDepth: 14, timeMs: 2500 },
 };
-
-function evaluate(st, me) {
-  let s = 0;
-  for (let i = 0; i < ROWS * COLS; i++) {
-    const p = st.board[i];
-    if (!p) continue;
-    let v = VAL[p.type];
-    if (p.type === 'ja') {
-      v += 2 * (p.owner === 0 ? 3 - Math.floor(i / COLS) : Math.floor(i / COLS));
-    }
-    s += p.owner === me ? v : -v;
-  }
-  for (const owner of [0, 1]) {
-    let hv = 0;
-    for (const t of st.hands[owner]) hv += HAND_VAL[t];
-    s += owner === me ? hv : -hv;
-  }
-  return s;
-}
-
-function orderKey(st, mv) {
-  if (!mv.drop) {
-    const cap = st.board[mv.to];
-    if (cap) return -(cap.type === 'wang' ? 10000 : VAL[cap.type]);
-  }
-  return 0;
-}
-
-function chooseMove(st, level) {
-  const [maxDepth, timeMs, margin] = LEVELS[level] || LEVELS.normal;
-  const rootMoves = legalMovesOf(st);
-  if (!rootMoves.length) return null;
-  const deadline = performance.now() + timeMs;
-  let nodes = 0;
-
-  function negamax(s, depth, alpha, beta, ply) {
-    if ((++nodes & 1023) === 0 && performance.now() > deadline) throw 'timeout';
-    const moves = legalMovesOf(s).sort((a, b) => orderKey(s, a) - orderKey(s, b));
-    let best = -WIN_SCORE * 2;
-    for (const mv of moves) {
-      const child = cloneState(s);
-      applyMove(child, mv);
-      let sc;
-      if (child.winner !== null) sc = child.winner === s.turn ? WIN_SCORE - ply : -(WIN_SCORE - ply);
-      else if (depth <= 1) sc = -evaluate(child, child.turn);
-      else sc = -negamax(child, depth - 1, -beta, -alpha, ply + 1);
-      if (sc > best) best = sc;
-      if (best > alpha) alpha = best;
-      if (alpha >= beta) break;
-    }
-    return best;
-  }
-
-  let bestMove = rootMoves[0];
-  let bestScored = null;  // [move, score] pairs from the deepest completed search
-  try {
-    for (let depth = 1; depth <= maxDepth; depth++) {
-      const scored = [];
-      let alpha = -WIN_SCORE * 2;
-      for (const mv of rootMoves.slice().sort((a, b) => orderKey(st, a) - orderKey(st, b))) {
-        const child = cloneState(st);
-        applyMove(child, mv);
-        let sc;
-        if (child.winner !== null) sc = child.winner === st.turn ? WIN_SCORE - 1 : -(WIN_SCORE - 1);
-        else if (depth <= 1) sc = -evaluate(child, child.turn);
-        else sc = -negamax(child, depth - 1, -WIN_SCORE * 2, -alpha, 1);
-        scored.push([mv, sc]);
-        if (sc > alpha) alpha = sc;
-      }
-      scored.sort((a, b) => b[1] - a[1]);
-      bestMove = scored[0][0];
-      bestScored = scored;
-      if (scored[0][1] >= WIN_SCORE - maxDepth) break;  // forced win found
-    }
-  } catch (e) {
-    if (e !== 'timeout') throw e;
-  }
-
-  if (margin && bestScored) {
-    const top = bestScored[0][1];
-    const pool = bestScored.filter(([, sc]) => sc >= top - margin).map(([mv]) => mv);
-    return pool[Math.floor(Math.random() * pool.length)];
-  }
-  return bestMove;
-}
-
-/* ====================================================================
-   UI
-   ==================================================================== */
 
 const $ = id => document.getElementById(id);
 const SAVE_KEY = 'twelve-janggi-v1';
@@ -618,7 +401,7 @@ function restore() {
 
 function startGame(mode, first) {
   if (thinking) return;
-  S = initialState(first);
+  S = G.initialState(first);
   S.mode = mode;
   S.ai_player = mode === 'ai' ? 1 : null;
   S.level = level;
@@ -637,9 +420,9 @@ function maybeAI() {
   render();
   // let the "thinking…" indicator paint before the search blocks the thread
   setTimeout(() => {
-    const mv = chooseMove(S, S.level || level);
+    const mv = Negamax.chooseMove(G, S, LEVELS[S.level || level] || LEVELS.normal);
     if (mv) {
-      applyMove(S, mv);
+      G.applyMove(S, mv);
       S.last = mv.drop ? [mv.to] : [mv.from, mv.to];
     }
     thinking = false;
@@ -649,7 +432,7 @@ function maybeAI() {
 }
 
 function playMove(mv) {
-  applyMove(S, mv);
+  G.applyMove(S, mv);
   S.last = mv.drop ? [mv.to] : [mv.from, mv.to];
   selected = null;
   render();
@@ -670,8 +453,8 @@ function onCell(i) {
   if (selected) {
     if (selected.kind === 'board') {
       if (i === selected.idx) { selected = null; render(); return; }
-      if (pieceMovesAt(S, selected.idx).includes(i)) { playMove({ from: selected.idx, to: i }); return; }
-    } else if (dropIdxs(S, S.turn).includes(i)) {
+      if (G.pieceMovesAt(S, selected.idx).includes(i)) { playMove({ from: selected.idx, to: i }); return; }
+    } else if (G.dropIdxs(S, S.turn).includes(i)) {
       playMove({ drop: S.hands[S.turn][selected.handIdx], to: i });
       return;
     }
@@ -726,7 +509,7 @@ function render() {
   boardEl.innerHTML = '';
   let legal = [];
   if (selected) {
-    legal = selected.kind === 'board' ? pieceMovesAt(S, selected.idx) : dropIdxs(S, S.turn);
+    legal = selected.kind === 'board' ? G.pieceMovesAt(S, selected.idx) : G.dropIdxs(S, S.turn);
   }
   for (let i = 0; i < ROWS * COLS; i++) {
     const cell = document.createElement('div');

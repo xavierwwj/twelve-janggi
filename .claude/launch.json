@@ -4,7 +4,7 @@
     {
       "name": "twelve-janggi",
       "runtimeExecutable": "python3",
-      "runtimeArgs": ["server.py", "8943"],
+      "runtimeArgs": ["-m", "http.server", "8943", "--directory", "."],
       "port": 8943
     }
   ]
