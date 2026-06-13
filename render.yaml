@@ -1,0 +1,11 @@
+# Render blueprint for the Black and White game server (free tier).
+# Deploy: in the Render dashboard, New + → Blueprint → connect this repo.
+# Render injects $PORT, which py/bw_server.py reads.
+services:
+  - type: web
+    name: black-and-white
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python3 py/bw_server.py
+    autoDeploy: true

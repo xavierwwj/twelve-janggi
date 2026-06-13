@@ -204,9 +204,13 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main():
-    port = int(sys.argv[1]) if len(sys.argv) > 1 else 8770
+    # explicit arg wins (local dev); else $PORT (hosts like Render set it); else default
+    if len(sys.argv) > 1:
+        port = int(sys.argv[1])
+    else:
+        port = int(os.environ.get('PORT', 8770))
     server = ThreadingHTTPServer(('0.0.0.0', port), Handler)
-    print(f'Black and White: http://localhost:{port}')
+    print(f'Black and White listening on port {port}', flush=True)
     server.serve_forever()
 
 

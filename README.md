@@ -4,7 +4,7 @@
 
 ## Play
 
-The game is fully static — **open `index.html` in a browser** (or serve the folder with any static host). No backend. Saved games persist in localStorage.
+The game is fully static — **open `games/twelve-janggi/index.html` in a browser** (or serve the repo with any static host; the root `index.html` is a menu linking to both games). No backend. Saved games persist in localStorage.
 
 On a phone, use the GitHub Pages deployment of this repo, and "Add to Home Screen" for an app-like experience.
 
@@ -42,7 +42,7 @@ The red dots on each tile show its move directions.
 
 A second Genius death match in this repo (S2/S4): a **simultaneous, hidden-information** game. Unlike Twelve Janggi it can't be played hot-seat — both players choose at the same time and must not see each other's tile — so it runs on a small **game server** that holds the hidden state and sends each player only their own view.
 
-## Run it
+## Run it locally
 
 Python 3, stdlib only:
 
@@ -51,6 +51,17 @@ python3 py/bw_server.py            # default port 8770
 ```
 
 Open the printed URL on two devices (or two browser tabs); each taps **Find a game** to be matched, then play. On phones, both devices use `http://<your-laptop-ip>:8770` over the same Wi-Fi.
+
+## Host it online (Render, free)
+
+To play over the internet rather than same Wi-Fi, deploy `bw_server.py` to [Render](https://render.com) — the repo includes a `render.yaml` blueprint:
+
+1. Push this repo to GitHub (already done).
+2. In the Render dashboard: **New + → Blueprint**, connect this repo, **Apply**. It reads `render.yaml` and creates a free web service named `black-and-white`.
+3. When it's live, open the service's `*.onrender.com` URL on two devices.
+4. Optional: paste that URL into `BW_URL` in the root `index.html` so the landing page links to it.
+
+The free tier sleeps after ~15 min idle (first visit then cold-starts in ~30–60s) and keeps games in memory, so a game lost to a sleep just needs a rejoin — fine for casual play. The server reads Render's `$PORT` automatically.
 
 ## Rules
 

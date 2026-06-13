@@ -1,0 +1,671 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#1c1917">
+<title>Twelve Janggi 십이장기</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: #2a1d18;
+    color: #eee;
+    font-family: system-ui, -apple-system, sans-serif;
+    height: 100vh;
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    touch-action: manipulation;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+  }
+  #app {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 10px;
+    min-height: 0;
+  }
+
+  /* ---- hand bars ---- */
+  .hand-bar {
+    width: min(94vw, 420px);
+    min-height: 58px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    border-radius: 12px;
+    border: 2px solid #463a33;
+    background: #332620;
+    transition: border-color .2s, box-shadow .2s;
+  }
+  .hand-bar.active { border-color: #eab308; box-shadow: 0 0 14px rgba(234,179,8,.35); }
+  .hand-bar.flipped { transform: rotate(180deg); }
+  .player-chip {
+    font-weight: 700;
+    font-size: 14px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    white-space: nowrap;
+  }
+  .player-chip.c0 { background: #14532d; color: #bbf7d0; }
+  .player-chip.c1 { background: #7f1d1d; color: #fecaca; }
+  .hand-pieces { flex: 1; display: flex; gap: 6px; flex-wrap: wrap; }
+  .turn-tag { font-size: 12px; color: #eab308; font-weight: 600; white-space: nowrap; visibility: hidden; }
+  .hand-bar.active .turn-tag { visibility: visible; }
+
+  /* ---- board ---- */
+  #board {
+    display: grid;
+    grid-template-rows: repeat(4, 1fr);
+    grid-template-columns: repeat(3, 1fr);
+    width: min(92vw, calc((100dvh - 220px) * 0.75), 380px);
+    aspect-ratio: 3 / 4;
+    gap: 5px;
+    padding: 8px;
+    background: #5c3d1e;
+    border: 4px solid #41290f;
+    border-radius: 14px;
+    box-shadow: 0 6px 24px rgba(0,0,0,.5);
+  }
+  .cell {
+    background: #cfa873;
+    border-radius: 6px;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+  }
+  .cell.zone0 { box-shadow: inset 0 0 0 2px rgba(22,101,52,.4); }
+  .cell.zone1 { box-shadow: inset 0 0 0 2px rgba(153,27,27,.4); }
+  .cell.last { outline: 3px solid rgba(234,179,8,.55); outline-offset: -3px; }
+  .cell.selected { outline: 3px solid #eab308; outline-offset: -3px; }
+  .cell.legal::after {
+    content: '';
+    position: absolute;
+    width: 26%; height: 26%;
+    border-radius: 50%;
+    background: rgba(22,101,52,.5);
+  }
+  .cell.capture { outline: 3px solid #dc2626; outline-offset: -3px; }
+
+  /* ---- pieces (white tiles, black hanja, red move dots — like the show) ---- */
+  .piece {
+    width: 88%; height: 88%;
+    border-radius: 7px;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 5px rgba(0,0,0,.45);
+    background: linear-gradient(165deg, #fdfaf2, #ece2cb);
+    color: #1c1917;
+  }
+  .piece.p0 { border: 2.5px solid #166534; }
+  .piece.p1 { border: 2.5px solid #991b1b; }
+  .piece.flip { transform: rotate(180deg); }
+  .piece.king.p0 { background: linear-gradient(165deg, #1f8a45, #14532d); color: #fff; }
+  .piece.king.p1 { background: linear-gradient(165deg, #c22b2b, #7f1d1d); color: #fff; }
+  .piece .hanja { font-size: clamp(18px, 7.5vmin, 40px); font-weight: 700; line-height: 1; }
+  .piece .kor { font-size: clamp(8px, 2.4vmin, 12px); font-weight: 600; opacity: .7; }
+  .piece .dot {
+    position: absolute;
+    width: 9%; height: 9%;
+    min-width: 4px; min-height: 4px;
+    border-radius: 50%;
+    background: #c0392b;
+    transform: translate(-50%, -50%);
+  }
+  .piece.king .dot { background: rgba(255,255,255,.9); }
+
+  /* hand (captured) pieces */
+  .hand-piece {
+    width: clamp(36px, 9vmin, 48px);
+    height: clamp(36px, 9vmin, 48px);
+    border-radius: 7px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: clamp(18px, 5vmin, 26px);
+    font-weight: 700;
+    background: linear-gradient(165deg, #fdfaf2, #ece2cb);
+    color: #1c1917;
+    box-shadow: 0 2px 4px rgba(0,0,0,.4);
+    cursor: pointer;
+  }
+  .hand-piece.p0 { border: 2.5px solid #166534; }
+  .hand-piece.p1 { border: 2.5px solid #991b1b; }
+  .hand-piece.selected { outline: 3px solid #eab308; outline-offset: 1px; }
+
+  /* ---- corner buttons ---- */
+  .corner-btn {
+    position: fixed;
+    bottom: 12px;
+    width: 40px; height: 40px;
+    border-radius: 50%;
+    border: 1px solid #57493f;
+    background: #3a2c24;
+    color: #d6d3d1;
+    font-size: 17px;
+    cursor: pointer;
+    z-index: 20;
+  }
+  #menuBtn { left: 12px; }
+  #undoBtn {
+    left: 60px;
+    width: auto;
+    padding: 0 16px;
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 1px;
+  }
+  #rulesBtn { right: 12px; }
+  .corner-btn:disabled { opacity: .35; cursor: default; }
+
+  /* ---- modals ---- */
+  .modal {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,.82);
+    z-index: 30;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 18px;
+  }
+  .modal.hidden { display: none; }
+  .card {
+    background: #332620;
+    border: 1px solid #57493f;
+    border-radius: 16px;
+    padding: 22px 24px;
+    width: min(92vw, 380px);
+    max-height: 85dvh;
+    overflow-y: auto;
+  }
+
+  /* menu */
+  #menuCard { text-align: center; }
+  #menuCard h1 { margin: 0; font-size: 32px; letter-spacing: 6px; }
+  #menuCard .sub { margin: 2px 0 18px; color: #c8b8a8; font-size: 14px; }
+  .menu-btn {
+    display: block;
+    width: 100%;
+    margin: 10px 0;
+    padding: 13px;
+    font-size: 16px;
+    font-weight: 700;
+    border: none;
+    border-radius: 10px;
+    background: #eab308;
+    color: #1c1917;
+    cursor: pointer;
+  }
+  .menu-btn.alt { background: #4a3a2f; color: #f1e8dc; }
+  .seg { display: flex; gap: 6px; margin-top: 14px; justify-content: center; }
+  .seg span { font-size: 13px; color: #c8b8a8; align-self: center; margin-right: 4px; }
+  .seg button {
+    padding: 7px 14px;
+    font-size: 13px;
+    font-weight: 600;
+    border-radius: 999px;
+    border: 1px solid #57493f;
+    background: transparent;
+    color: #d6d3d1;
+    cursor: pointer;
+  }
+  .seg button.on { background: #eab308; color: #1c1917; border-color: #eab308; }
+  #resumeBtn { margin-top: 16px; background: none; border: none; color: #c8b8a8; font-size: 14px; cursor: pointer; text-decoration: underline; }
+  #resumeBtn.hidden { display: none; }
+
+  /* win overlay */
+  #overlay {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,.78);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: space-around;
+    z-index: 25;
+  }
+  #overlay.hidden { display: none; }
+  .win-msg { font-size: clamp(20px, 6vmin, 32px); font-weight: 800; text-align: center; padding: 0 16px; }
+  .win-msg.flipped { transform: rotate(180deg); }
+  .win-msg.hidden { visibility: hidden; }
+  .win-msg.w0 { color: #86efac; }
+  .win-msg.w1 { color: #fca5a5; }
+  #overlay .row { display: flex; gap: 12px; }
+  #overlay button {
+    font-size: 17px;
+    font-weight: 700;
+    padding: 12px 26px;
+    border-radius: 999px;
+    border: none;
+    cursor: pointer;
+  }
+  #againBtn { background: #eab308; color: #1c1917; }
+  #undoBtn2, #changeBtn { background: #4a3a2f; color: #f1e8dc; }
+  #undoBtn2.hidden { display: none; }
+
+  /* rules */
+  #rulesCard { font-size: 14px; line-height: 1.55; width: min(92vw, 460px); }
+  #rulesCard h2 { margin-top: 0; font-size: 18px; }
+  #rulesCard h3 { margin: 14px 0 6px; font-size: 14px; color: #eab308; text-transform: uppercase; letter-spacing: 1px; }
+  #rulesCard ul { padding-left: 18px; margin: 8px 0; }
+  #rulesCard ol { padding-left: 20px; margin: 8px 0; }
+  #rulesCard table { border-collapse: collapse; width: 100%; margin: 8px 0; }
+  #rulesCard th, #rulesCard td { border: 1px solid #57493f; padding: 5px 8px; text-align: left; }
+  #rulesCard th { background: #3a2c24; font-size: 13px; }
+  #rulesCard td.pc { font-size: 20px; font-weight: 700; text-align: center; white-space: nowrap; }
+</style>
+</head>
+<body>
+
+<div id="app">
+  <div class="hand-bar" id="bar1">
+    <span class="player-chip c1" id="chip1">홍 Red</span>
+    <div class="hand-pieces" id="handPieces1"></div>
+    <span class="turn-tag" id="tag1">▶ your turn</span>
+  </div>
+
+  <div id="board"></div>
+
+  <div class="hand-bar" id="bar0">
+    <span class="player-chip c0" id="chip0">초 Green</span>
+    <div class="hand-pieces" id="handPieces0"></div>
+    <span class="turn-tag" id="tag0">▶ your turn</span>
+  </div>
+</div>
+
+<button class="corner-btn" id="menuBtn" title="New game / mode">↺</button>
+<button class="corner-btn" id="undoBtn" title="Undo move">UNDO</button>
+<button class="corner-btn" id="rulesBtn" title="Rules">?</button>
+
+<div id="menu" class="modal">
+  <div class="card" id="menuCard">
+    <h1>십이장기</h1>
+    <div class="sub">Twelve Janggi</div>
+    <button class="menu-btn" id="btnPvp">👥 &nbsp;2 Players</button>
+    <button class="menu-btn alt" id="btnAiYou">🤖 &nbsp;vs AI — you move first</button>
+    <button class="menu-btn alt" id="btnAiFirst">🤖 &nbsp;vs AI — AI moves first</button>
+    <div class="seg" id="levelSeg">
+      <span>AI level</span>
+      <button data-level="easy">Easy</button>
+      <button data-level="normal" class="on">Normal</button>
+      <button data-level="hard">Hard</button>
+    </div>
+    <button class="menu-btn alt" id="btnRules">📖 &nbsp;Rules</button>
+    <button id="resumeBtn" class="hidden">resume game</button>
+  </div>
+</div>
+
+<div id="overlay" class="hidden">
+  <div class="win-msg flipped" id="winMsgTop"></div>
+  <div class="row">
+    <button id="againBtn">Play again</button>
+    <button id="undoBtn2">Undo</button>
+    <button id="changeBtn">Menu</button>
+  </div>
+  <div class="win-msg" id="winMsgBottom"></div>
+</div>
+
+<div id="rulesModal" class="modal hidden">
+  <div class="card" id="rulesCard">
+    <h2 id="rulesTitle"></h2>
+
+    <h3>How to play</h3>
+    <ul>
+      <li>Tap a piece to see its legal moves (<b style="color:#4ade80">green dot</b> = move,
+        <b style="color:#f87171">red outline</b> = capture), then tap the destination.</li>
+      <li>Tap a captured piece in your tray, then tap an empty square to drop it.</li>
+      <li>Buttons: <b>↺</b> menu &nbsp;·&nbsp; <b>UNDO</b> take back a move &nbsp;·&nbsp; <b>?</b> rules.</li>
+    </ul>
+
+    <div id="rulesBody"></div>
+    <p style="text-align:center; margin-bottom:0">
+      <button id="closeRulesBtn" class="menu-btn" style="display:inline-block;width:auto;padding:9px 26px">Close</button>
+    </p>
+  </div>
+</div>
+
+<!-- bump ?v= when these files change so browsers drop their cached copies -->
+<script src="../../core/engine.js?v=3"></script>
+<script src="../../core/negamax.js?v=3"></script>
+<script src="engine.js?v=3"></script>
+<script>
+'use strict';
+
+/* UI layer only. All rules live in games/twelve-janggi/engine.js (the engine
+   API), all search in core/negamax.js (generic agent). */
+
+const G = new TwelveJanggi();
+const { ROWS, COLS, MOVES, HANJA, KOR } = G;
+
+// agent presets (UI concern: how strong each menu option is).
+// Each move samples a tolerance from |Normal(marginMean, marginStd)| and
+// plays a random move within it of the best — frequent small mistakes,
+// rarer big ones. Calibrated by self-play (py/tune.py): easy blunders a
+// minister/general roughly once every 7 turns, normal drops a man roughly
+// once every 7 turns and a bigger piece almost never. Hard is deterministic.
+const LEVELS = {
+  easy:   { maxDepth: 2,  timeMs: 300,  marginMean: 52, marginStd: 21 },
+  normal: { maxDepth: 5,  timeMs: 800,  marginMean: 18, marginStd: 8 },
+  hard:   { maxDepth: 12, timeMs: 2000 },
+};
+
+const $ = id => document.getElementById(id);
+const SAVE_KEY = 'twelve-janggi-v1';
+
+let S = null;            // engine state + .mode, .ai_player, .level, .last
+let selected = null;     // {kind:'board', idx} | {kind:'hand', handIdx}
+let thinking = false;    // AI is computing
+let level = 'normal';
+let lastConfig = null;   // {mode, first} for "play again"
+let history = [];        // snapshots taken before each applied move
+
+function snapshot() {
+  const c = G.cloneState(S);
+  c.mode = S.mode;
+  c.ai_player = S.ai_player;
+  c.level = S.level;
+  c.last = S.last ? S.last.slice() : [];
+  return c;
+}
+
+function save() {
+  try { localStorage.setItem(SAVE_KEY, JSON.stringify({ S, level, lastConfig, history })); }
+  catch (e) { /* storage unavailable (private mode etc.) — play on without saving */ }
+}
+
+function restore() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(SAVE_KEY));
+    if (saved && saved.S && Array.isArray(saved.S.board)) {
+      S = saved.S;
+      level = saved.level || 'normal';
+      lastConfig = saved.lastConfig || null;
+      history = Array.isArray(saved.history) ? saved.history : [];
+      document.querySelectorAll('#levelSeg button').forEach(b =>
+        b.classList.toggle('on', b.dataset.level === level));
+      return true;
+    }
+  } catch (e) { /* corrupt or unavailable — start fresh */ }
+  return false;
+}
+
+function startGame(mode, first) {
+  if (thinking) return;
+  S = G.initialState(first);
+  S.mode = mode;
+  S.ai_player = mode === 'ai' ? 1 : null;
+  S.level = level;
+  S.last = [];
+  lastConfig = { mode, first };
+  history = [];
+  selected = null;
+  $('menu').classList.add('hidden');
+  render();
+  save();
+  maybeAI();
+}
+
+function maybeAI() {
+  if (!S || S.winner !== null || S.mode !== 'ai' || S.turn !== S.ai_player) return;
+  thinking = true;
+  render();
+  // let the "thinking…" indicator paint before the search blocks the thread
+  setTimeout(() => {
+    const mv = Negamax.chooseMove(G, S, LEVELS[S.level || level] || LEVELS.normal);
+    if (mv) {
+      history.push(snapshot());
+      G.applyMove(S, mv);
+      S.last = mv.drop ? [mv.to] : [mv.from, mv.to];
+    }
+    thinking = false;
+    render();
+    save();
+  }, 60);
+}
+
+function playMove(mv) {
+  history.push(snapshot());
+  G.applyMove(S, mv);
+  S.last = mv.drop ? [mv.to] : [mv.from, mv.to];
+  selected = null;
+  render();
+  save();
+  maybeAI();
+}
+
+/* Undo one ply in PvP; in vs-AI, rewind to the last position where it was
+   the human's turn (i.e. takes back the AI's reply and your move). */
+function canUndo() {
+  if (!S || thinking || !history.length) return false;
+  if (S.mode === 'ai') return history.some(h => h.turn !== S.ai_player);
+  return true;
+}
+
+function undo() {
+  if (!canUndo()) return;
+  let idx = history.length - 1;
+  if (S.mode === 'ai') {
+    while (idx >= 0 && history[idx].turn === S.ai_player) idx--;
+  }
+  S = history[idx];
+  history.length = idx;
+  selected = null;
+  render();
+  save();
+}
+
+/* ---------- interaction ---------- */
+
+function locked() {
+  return thinking || !S || S.winner !== null
+      || (S.mode === 'ai' && S.turn === S.ai_player);
+}
+
+function onCell(i) {
+  if (locked()) return;
+  const p = S.board[i];
+  if (selected) {
+    if (selected.kind === 'board') {
+      if (i === selected.idx) { selected = null; render(); return; }
+      if (G.pieceMovesAt(S, selected.idx).includes(i)) { playMove({ from: selected.idx, to: i }); return; }
+    } else if (G.dropIdxs(S, S.turn).includes(i)) {
+      playMove({ drop: S.hands[S.turn][selected.handIdx], to: i });
+      return;
+    }
+  }
+  selected = (p && p.owner === S.turn) ? { kind: 'board', idx: i } : null;
+  render();
+}
+
+function onHand(player, handIdx) {
+  if (locked() || player !== S.turn) return;
+  if (selected && selected.kind === 'hand' && selected.handIdx === handIdx) {
+    selected = null;
+  } else {
+    selected = { kind: 'hand', handIdx };
+  }
+  render();
+}
+
+/* ---------- rendering ---------- */
+
+function pieceEl(p, mini) {
+  const el = document.createElement('div');
+  if (mini) {
+    el.className = 'hand-piece p' + p.owner;
+    el.textContent = HANJA[p.type];
+    return el;
+  }
+  el.className = 'piece p' + p.owner
+    + (p.type === 'wang' ? ' king' : '')
+    + (p.owner === 1 ? ' flip' : '');
+  const h = document.createElement('span');
+  h.className = 'hanja';
+  h.textContent = HANJA[p.type];
+  const k = document.createElement('span');
+  k.className = 'kor';
+  k.textContent = KOR[p.type];
+  el.append(h, k);
+  // dots in the piece's own orientation; the CSS flip rotates them for player 1
+  for (const [dr, dc] of MOVES[p.type]) {
+    const dot = document.createElement('i');
+    dot.className = 'dot';
+    dot.style.left = (50 + dc * 41) + '%';
+    dot.style.top = (50 + dr * 41) + '%';
+    el.appendChild(dot);
+  }
+  return el;
+}
+
+function render() {
+  if (!S) return;
+  const boardEl = $('board');
+  boardEl.innerHTML = '';
+  let legal = [];
+  if (selected) {
+    legal = selected.kind === 'board' ? G.pieceMovesAt(S, selected.idx) : G.dropIdxs(S, S.turn);
+  }
+  for (let i = 0; i < ROWS * COLS; i++) {
+    const cell = document.createElement('div');
+    cell.className = 'cell';
+    cell.dataset.idx = i;
+    const r = Math.floor(i / COLS);
+    if (r === 0) cell.classList.add('zone1');
+    if (r === ROWS - 1) cell.classList.add('zone0');
+    if (S.last && S.last.includes(i)) cell.classList.add('last');
+    if (selected && selected.kind === 'board' && selected.idx === i) cell.classList.add('selected');
+    if (legal.includes(i)) cell.classList.add(S.board[i] ? 'capture' : 'legal');
+    if (S.board[i]) cell.appendChild(pieceEl(S.board[i], false));
+    cell.addEventListener('click', () => onCell(i));
+    boardEl.appendChild(cell);
+  }
+
+  const isAi = S.mode === 'ai';
+  $('bar1').classList.toggle('flipped', !isAi);
+  $('chip1').textContent = isAi ? '🤖 AI · 홍 Red' : '홍 Red';
+  $('tag0').textContent = '▶ your turn';
+  $('tag1').textContent = isAi ? (thinking ? '🤔 thinking…' : '▶ AI turn') : '▶ your turn';
+
+  for (const player of [0, 1]) {
+    $('bar' + player).classList.toggle('active', S.winner === null && S.turn === player);
+    const handEl = $('handPieces' + player);
+    handEl.innerHTML = '';
+    S.hands[player].forEach((type, hi) => {
+      const el = pieceEl({ type, owner: player }, true);
+      if (selected && selected.kind === 'hand' && S.turn === player && selected.handIdx === hi) {
+        el.classList.add('selected');
+      }
+      el.addEventListener('click', () => onHand(player, hi));
+      handEl.appendChild(el);
+    });
+  }
+
+  $('undoBtn').disabled = !canUndo();
+
+  const overlay = $('overlay');
+  if (S.winner !== null) {
+    $('undoBtn2').classList.toggle('hidden', !canUndo());
+    const name = S.winner === 0 ? '초 Green' : (isAi ? '🤖 AI (Red)' : '홍 Red');
+    const why = {
+      capture: 'captured the King!',
+      reach: 'the King reached enemy territory!',
+      stuck: 'opponent has no legal move!',
+    }[S.reason] || '';
+    const msg = `${name} wins — ${why}`;
+    for (const id of ['winMsgTop', 'winMsgBottom']) {
+      const el = $(id);
+      el.textContent = msg;
+      el.classList.remove('w0', 'w1');
+      el.classList.add('w' + S.winner);
+    }
+    $('winMsgTop').classList.toggle('hidden', isAi);
+    overlay.classList.remove('hidden');
+  } else {
+    overlay.classList.add('hidden');
+  }
+}
+
+/* ---------- wiring ---------- */
+
+$('btnPvp').addEventListener('click', () => startGame('pvp', 0));
+$('btnAiYou').addEventListener('click', () => startGame('ai', 0));
+$('btnAiFirst').addEventListener('click', () => startGame('ai', 1));
+$('levelSeg').addEventListener('click', e => {
+  const btn = e.target.closest('button[data-level]');
+  if (!btn) return;
+  level = btn.dataset.level;
+  document.querySelectorAll('#levelSeg button').forEach(b => b.classList.toggle('on', b === btn));
+  save();
+});
+$('undoBtn').addEventListener('click', undo);
+$('undoBtn2').addEventListener('click', undo);
+$('resumeBtn').addEventListener('click', () => $('menu').classList.add('hidden'));
+$('menuBtn').addEventListener('click', () => {
+  $('resumeBtn').classList.toggle('hidden', !S || S.winner !== null);
+  $('menu').classList.remove('hidden');
+});
+$('againBtn').addEventListener('click', () => lastConfig && startGame(lastConfig.mode, lastConfig.first));
+$('changeBtn').addEventListener('click', () => {
+  $('overlay').classList.add('hidden');
+  $('resumeBtn').classList.add('hidden');
+  $('menu').classList.remove('hidden');
+});
+$('rulesBtn').addEventListener('click', () => $('rulesModal').classList.remove('hidden'));
+$('btnRules').addEventListener('click', () => $('rulesModal').classList.remove('hidden'));
+$('closeRulesBtn').addEventListener('click', () => $('rulesModal').classList.add('hidden'));
+
+// build the rules modal from the engine's display metadata (G.rules)
+function buildRules() {
+  $('rulesTitle').textContent = G.rules.title;
+  const body = $('rulesBody');
+  body.innerHTML = '';
+  for (const sec of G.rules.sections) {
+    const h = document.createElement('h3');
+    h.textContent = sec.heading;
+    body.appendChild(h);
+    if (sec.table) {
+      const tbl = document.createElement('table');
+      tbl.innerHTML =
+        '<tr>' + sec.table.headers.map(x => `<th>${x}</th>`).join('') + '</tr>' +
+        sec.table.rows.map(r =>
+          `<tr><td class="pc">${r[0]}</td>` + r.slice(1).map(c => `<td>${c}</td>`).join('') + '</tr>'
+        ).join('');
+      body.appendChild(tbl);
+    }
+    if (sec.items) {
+      const list = document.createElement(sec.ordered ? 'ol' : 'ul');
+      list.innerHTML = sec.items.map(x => `<li>${x}</li>`).join('');
+      body.appendChild(list);
+    }
+    if (sec.note) {
+      const p = document.createElement('p');
+      p.style.margin = '6px 0';
+      p.innerHTML = sec.note;
+      body.appendChild(p);
+    }
+  }
+}
+buildRules();
+
+// restore a saved game (if any) behind the menu; offer resume if it's still live
+if (restore()) {
+  $('resumeBtn').classList.toggle('hidden', S.winner !== null);
+  render();
+  maybeAI();  // in case the page closed mid-"thinking"
+}
+</script>
+</body>
+</html>
