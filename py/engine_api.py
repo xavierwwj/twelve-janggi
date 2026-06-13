@@ -1,9 +1,10 @@
-"""The generic engine API for two-player, zero-sum, turn-based games.
+"""The abstract base class for two-player, zero-sum, turn-based game engines.
 
-An *engine* is any module or object exposing the functions below. Agents
-(negamax today, RL policies later) and tooling (self-play, tournaments)
-depend only on this contract, never on a specific game. The JavaScript side
-mirrors it exactly (core/negamax.js consumes it, games/*/engine.js provide it).
+A concrete engine subclasses ``GameEngine`` and owns all game knowledge.
+Agents (negamax today, RL policies later) and tooling (self-play,
+tournaments) depend only on this interface, never on a specific game. The
+JavaScript side mirrors it exactly (core/engine.js is the base class,
+core/negamax.js consumes it, games/*/engine.js subclass it).
 
 State requirements
 ------------------
@@ -49,12 +50,34 @@ Future (RL) extensions — to be added per game when needed
   move_index(state, move) / index_move(state, idx) -> fixed action indexing
 """
 
-from typing import Any, List, Optional, Protocol
+from abc import ABC, abstractmethod
+from typing import Any, List
 
 
-class GameEngine(Protocol):
-    def initial_state(self, first: int = 0) -> Any: ...
-    def clone_state(self, state: Any) -> Any: ...
-    def legal_moves(self, state: Any) -> List[Any]: ...
-    def apply_move(self, state: Any, move: Any) -> None: ...
-    def evaluate(self, state: Any, player: int) -> float: ...
+class GameEngine(ABC):
+    """Subclass and implement the five abstract methods. ``order_moves`` is
+    optional — override it for a best-first hint that speeds up alpha-beta."""
+
+    @abstractmethod
+    def initial_state(self, first: int = 0) -> Any:
+        """A fresh game with player ``first`` (0/1) to move."""
+
+    @abstractmethod
+    def clone_state(self, state: Any) -> Any:
+        """A copy that can be mutated without affecting the original."""
+
+    @abstractmethod
+    def legal_moves(self, state: Any) -> List[Any]:
+        """All legal moves for ``state['turn']``."""
+
+    @abstractmethod
+    def apply_move(self, state: Any, move: Any) -> None:
+        """Mutate ``state``: perform the move, advance turn, set winner."""
+
+    @abstractmethod
+    def evaluate(self, state: Any, player: int) -> float:
+        """Finite heuristic of a non-terminal state from ``player``'s view."""
+
+    def order_moves(self, state: Any, moves: List[Any]) -> List[Any]:
+        """Optional best-first ordering hint; identity by default."""
+        return moves

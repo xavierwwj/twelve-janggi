@@ -10,7 +10,9 @@ import argparse
 import time
 
 import negamax
-import twelve_janggi as engine
+from twelve_janggi import TwelveJanggi
+
+engine = TwelveJanggi()
 
 LEVELS = {
     # mirrors the presets in index.html (calibrated with tune.py)

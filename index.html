@@ -338,15 +338,16 @@
 </div>
 
 <!-- bump ?v= when these files change so browsers drop their cached copies -->
-<script src="core/negamax.js?v=2"></script>
-<script src="games/twelve-janggi/engine.js?v=2"></script>
+<script src="core/engine.js?v=3"></script>
+<script src="core/negamax.js?v=3"></script>
+<script src="games/twelve-janggi/engine.js?v=3"></script>
 <script>
 'use strict';
 
 /* UI layer only. All rules live in games/twelve-janggi/engine.js (the engine
    API), all search in core/negamax.js (generic agent). */
 
-const G = TwelveJanggi;
+const G = new TwelveJanggi();
 const { ROWS, COLS, MOVES, HANJA, KOR } = G;
 
 // agent presets (UI concern: how strong each menu option is).

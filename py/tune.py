@@ -13,7 +13,9 @@ import argparse
 import time
 
 import negamax
-import twelve_janggi as engine
+from twelve_janggi import TwelveJanggi
+
+engine = TwelveJanggi()
 
 MAN_CLASS = 8        # regret >= this counts as at least a man-sized mistake
 MINISTER_CLASS = 25  # regret >= this counts as a minister/general-sized blunder
