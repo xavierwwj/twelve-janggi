@@ -160,7 +160,15 @@
     z-index: 20;
   }
   #menuBtn { left: 12px; }
-  #undoBtn { left: 60px; }
+  #undoBtn {
+    left: 60px;
+    width: auto;
+    padding: 0 16px;
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 1px;
+  }
   #rulesBtn { right: 12px; }
   .corner-btn:disabled { opacity: .35; cursor: default; }
 
@@ -279,7 +287,7 @@
 </div>
 
 <button class="corner-btn" id="menuBtn" title="New game / mode">↺</button>
-<button class="corner-btn" id="undoBtn" title="Undo move">↶</button>
+<button class="corner-btn" id="undoBtn" title="Undo move">UNDO</button>
 <button class="corner-btn" id="rulesBtn" title="Rules">?</button>
 
 <div id="menu" class="modal">
@@ -295,6 +303,7 @@
       <button data-level="normal" class="on">Normal</button>
       <button data-level="hard">Hard</button>
     </div>
+    <button class="menu-btn alt" id="btnRules">📖 &nbsp;Rules</button>
     <button id="resumeBtn" class="hidden">resume game</button>
   </div>
 </div>
@@ -318,7 +327,7 @@
       <li>Tap a piece to see its legal moves (<b style="color:#4ade80">green dot</b> = move,
         <b style="color:#f87171">red outline</b> = capture), then tap the destination.</li>
       <li>Tap a captured piece in your tray, then tap an empty square to drop it.</li>
-      <li>Buttons: <b>↺</b> menu &nbsp;·&nbsp; <b>↶</b> undo &nbsp;·&nbsp; <b>?</b> rules.</li>
+      <li>Buttons: <b>↺</b> menu &nbsp;·&nbsp; <b>UNDO</b> take back a move &nbsp;·&nbsp; <b>?</b> rules.</li>
     </ul>
 
     <div id="rulesBody"></div>
@@ -614,6 +623,7 @@ $('changeBtn').addEventListener('click', () => {
   $('menu').classList.remove('hidden');
 });
 $('rulesBtn').addEventListener('click', () => $('rulesModal').classList.remove('hidden'));
+$('btnRules').addEventListener('click', () => $('rulesModal').classList.remove('hidden'));
 $('closeRulesBtn').addEventListener('click', () => $('rulesModal').classList.add('hidden'));
 
 // build the rules modal from the engine's display metadata (G.rules)
