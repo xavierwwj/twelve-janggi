@@ -6,6 +6,12 @@
       "runtimeExecutable": "python3",
       "runtimeArgs": ["-m", "http.server", "8943", "--directory", "."],
       "port": 8943
+    },
+    {
+      "name": "black-and-white",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["py/bw_server.py", "8770"],
+      "port": 8770
     }
   ]
 }

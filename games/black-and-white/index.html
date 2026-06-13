@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#1c1917">
+<title>Black and White 흑과 백</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: #2a1d18;
+    color: #eee;
+    font-family: system-ui, -apple-system, sans-serif;
+    height: 100vh; height: 100dvh;
+    display: flex; flex-direction: column;
+    overflow: hidden;
+    touch-action: manipulation;
+    user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+  }
+  #app { flex: 1; display: flex; flex-direction: column; min-height: 0; padding: 10px; gap: 10px; }
+  .hidden { display: none !important; }
+
+  /* ---- panels ---- */
+  .panel {
+    background: #332620;
+    border: 2px solid #463a33;
+    border-radius: 12px;
+    padding: 10px 12px;
+  }
+  .row { display: flex; align-items: center; gap: 10px; }
+  .spacer { flex: 1; }
+
+  /* opponent / you headers */
+  .who { font-weight: 700; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .score { font-size: 22px; font-weight: 800; min-width: 28px; text-align: center; }
+  .status { font-size: 13px; color: #c8b8a8; }
+  .status.locked { color: #86efac; font-weight: 600; }
+  #youPanel { border-color: #eab308; }
+
+  /* ---- center: round + timer / reveal ---- */
+  #center {
+    flex: 1; min-height: 0;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 10px; text-align: center;
+  }
+  #roundLabel { font-size: 13px; letter-spacing: 2px; text-transform: uppercase; color: #c8b8a8; }
+  #timer { font-size: 46px; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
+  #timer.low { color: #fca5a5; }
+  #timerBar { width: min(80vw, 360px); height: 6px; border-radius: 3px; background: #463a33; overflow: hidden; }
+  #timerFill { height: 100%; background: #eab308; width: 100%; transition: width .25s linear; }
+  #prompt { font-size: 15px; color: #e8dcc8; }
+
+  /* reveal banner */
+  #reveal { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+  .reveal-cmp { display: flex; align-items: center; gap: 18px; }
+  .reveal-cmp .cap { font-size: 12px; color: #c8b8a8; margin-bottom: 6px; }
+  .reveal-vs { font-size: 28px; font-weight: 800; color: #c8b8a8; }
+  .banner { font-size: 26px; font-weight: 800; }
+  .banner.win { color: #86efac; }
+  .banner.lose { color: #fca5a5; }
+  .banner.tie { color: #d6cdbf; }
+  #revealNext { font-size: 13px; color: #c8b8a8; }
+
+  /* ---- tiles ---- */
+  .tile {
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 800;
+    box-shadow: 0 2px 5px rgba(0,0,0,.4);
+    position: relative;
+  }
+  .tile.black { background: linear-gradient(165deg, #2b2b2b, #111); color: #f3ead4; border: 2px solid #000; }
+  .tile.white { background: linear-gradient(165deg, #fdfaf2, #e6dcc5); color: #1a1a1a; border: 2px solid #cdbf9f; }
+  .tile.big { width: clamp(58px, 19vmin, 84px); height: clamp(72px, 24vmin, 104px); font-size: clamp(30px, 11vmin, 50px); }
+  .tile.mini { width: 30px; height: 38px; font-size: 18px; border-radius: 7px; }
+  .tile.swatch { width: 30px; height: 38px; font-size: 16px; border-radius: 7px; }
+  .tile.swatch::after { content: '?'; opacity: .5; }
+
+  /* your hand */
+  #handWrap { display: flex; flex-direction: column; gap: 8px; }
+  #hand { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+  #hand .tile { cursor: pointer; transition: transform .1s; }
+  #hand .tile.sel { outline: 3px solid #eab308; outline-offset: 2px; transform: translateY(-4px); }
+  #hand .tile.disabled { opacity: .4; pointer-events: none; }
+  #lockBtn {
+    align-self: center;
+    font-size: 16px; font-weight: 700;
+    padding: 11px 30px; border-radius: 999px; border: none;
+    background: #eab308; color: #1c1917; cursor: pointer;
+  }
+  #lockBtn:disabled { opacity: .4; cursor: default; }
+  #lockedNote { text-align: center; font-size: 14px; color: #86efac; font-weight: 600; }
+
+  /* history strip */
+  #history { display: flex; gap: 6px; overflow-x: auto; padding: 4px 2px; }
+  .hcell { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 3px; }
+  .hcell .rnum { font-size: 10px; color: #9a8c7c; }
+  .hcell .res { font-size: 11px; font-weight: 800; }
+  .res.win { color: #86efac; } .res.lose { color: #fca5a5; } .res.tie { color: #d6cdbf; }
+  .hstack { display: flex; flex-direction: column; gap: 2px; align-items: center; }
+
+  /* ---- overlays (join / waiting / over) ---- */
+  .modal {
+    position: fixed; inset: 0; z-index: 30;
+    background: rgba(0,0,0,.82);
+    display: flex; align-items: center; justify-content: center; padding: 18px;
+  }
+  .card { background: #332620; border: 1px solid #57493f; border-radius: 16px; padding: 24px; width: min(92vw, 380px); text-align: center; }
+  .card h1 { margin: 0 0 2px; font-size: 30px; letter-spacing: 4px; }
+  .card .sub { margin: 0 0 18px; color: #c8b8a8; font-size: 14px; }
+  .card input {
+    width: 100%; padding: 12px; font-size: 16px; border-radius: 10px;
+    border: 1px solid #57493f; background: #241b16; color: #eee; margin-bottom: 12px; text-align: center;
+  }
+  .btn {
+    width: 100%; padding: 13px; font-size: 16px; font-weight: 700;
+    border: none; border-radius: 10px; background: #eab308; color: #1c1917; cursor: pointer;
+  }
+  .btn.alt { background: #4a3a2f; color: #f1e8dc; margin-top: 10px; }
+  .hint { margin-top: 16px; font-size: 12px; color: #9a8c7c; line-height: 1.5; word-break: break-all; }
+  .spin { margin: 14px auto 4px; width: 34px; height: 34px; border: 4px solid #463a33; border-top-color: #eab308; border-radius: 50%; animation: spin 1s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #err { color: #fca5a5; font-size: 13px; min-height: 16px; margin-bottom: 6px; }
+  .big-result { font-size: 30px; font-weight: 800; margin-bottom: 6px; }
+  .big-result.win { color: #86efac; } .big-result.lose { color: #fca5a5; } .big-result.draw { color: #d6cdbf; }
+  .finalscore { font-size: 18px; color: #e8dcc8; margin-bottom: 16px; }
+  #rulesBtn { position: fixed; top: 10px; right: 10px; width: 36px; height: 36px; border-radius: 50%; border: 1px solid #57493f; background: #3a2c24; color: #d6d3d1; font-size: 16px; cursor: pointer; z-index: 20; }
+  #rulesCard { text-align: left; font-size: 14px; line-height: 1.55; }
+  #rulesCard h2 { margin-top: 0; }
+  #rulesCard ul { padding-left: 18px; }
+</style>
+</head>
+<body>
+
+<!-- in-game view -->
+<div id="app" class="hidden">
+  <div class="panel" id="oppPanel">
+    <div class="row">
+      <span class="who" id="oppName">Opponent</span>
+      <span class="spacer"></span>
+      <span class="status" id="oppStatus">deciding…</span>
+      <span class="score" id="oppScore">0</span>
+    </div>
+  </div>
+
+  <div id="center">
+    <div id="play" class="hidden">
+      <div id="roundLabel">Round 1 / 9</div>
+      <div id="timer">30</div>
+      <div id="timerBar"><div id="timerFill"></div></div>
+      <div id="prompt">Choose a tile and lock it in</div>
+    </div>
+    <div id="reveal" class="hidden">
+      <div class="reveal-cmp">
+        <div><div class="cap">You</div><div id="revYou" class="tile big white">0</div></div>
+        <div class="reveal-vs" id="revVs">vs</div>
+        <div><div class="cap" id="revOppCap">Opponent</div><div id="revOpp" class="tile big black swatch"></div></div>
+      </div>
+      <div class="banner" id="revBanner">—</div>
+      <div id="revealNext">Next round soon…</div>
+    </div>
+  </div>
+
+  <div id="history"></div>
+
+  <div class="panel" id="youPanel">
+    <div class="row" style="margin-bottom:10px">
+      <span class="who" id="youName">You</span>
+      <span class="status locked hidden" id="youStatus">locked in ✓</span>
+      <span class="spacer"></span>
+      <span class="score" id="youScore">0</span>
+    </div>
+    <div id="handWrap">
+      <div id="hand"></div>
+      <button id="lockBtn" disabled>Lock in</button>
+      <div id="lockedNote" class="hidden">Locked in — waiting for opponent…</div>
+    </div>
+  </div>
+</div>
+
+<button id="rulesBtn" title="Rules">?</button>
+
+<!-- join -->
+<div id="joinModal" class="modal">
+  <div class="card">
+    <h1>흑과 백</h1>
+    <div class="sub">Black and White</div>
+    <div id="err"></div>
+    <input id="nameInput" maxlength="16" placeholder="Your name" autocomplete="off">
+    <button class="btn" id="findBtn">Find a game</button>
+    <div class="hint" id="joinHint"></div>
+  </div>
+</div>
+
+<!-- waiting -->
+<div id="waitModal" class="modal hidden">
+  <div class="card">
+    <h1>흑과 백</h1>
+    <div class="sub">Waiting for an opponent…</div>
+    <div class="spin"></div>
+    <div class="hint" id="waitHint"></div>
+    <button class="btn alt" id="cancelBtn">Cancel</button>
+  </div>
+</div>
+
+<!-- game over -->
+<div id="overModal" class="modal hidden">
+  <div class="card">
+    <div class="big-result" id="overResult">—</div>
+    <div class="finalscore" id="overScore"></div>
+    <button class="btn" id="againBtn">Play again</button>
+  </div>
+</div>
+
+<!-- rules -->
+<div id="rulesModal" class="modal hidden">
+  <div class="card" id="rulesCard">
+    <h2>Black and White 흑과 백</h2>
+    <ul>
+      <li>You each hold 9 tiles, <b>0–8</b>. Even numbers are <b>black</b> (0,2,4,6,8), odd are <b>white</b> (1,3,5,7).</li>
+      <li>Over <b>9 rounds</b>, you both secretly pick one tile and lock it in before the timer runs out. If you don't lock in time, a random remaining tile is played for you.</li>
+      <li>The <b>higher number wins</b> the round (+1 point); a tie scores nothing.</li>
+      <li>You only ever see your opponent's tile <b>colour</b> and whether you won — never their exact number, even afterwards. Track what they've spent to read what's left.</li>
+      <li>Most points after 9 rounds wins. Reaching <b>5</b> clinches it. Equal points is a draw.</li>
+    </ul>
+    <button class="btn" id="closeRulesBtn" style="margin-top:8px">Close</button>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+const $ = id => document.getElementById(id);
+const SESSION_KEY = 'bw-session';
+
+let session = null;     // {game, player, token}
+let latest = null;      // last /api/state response
+let selected = null;    // tile chosen but not yet locked
+let curRound = 0;       // to clear selection when the round changes
+let serverLeft = 0, syncAt = 0;  // for smooth local countdown
+
+const colorOf = t => (t % 2 === 0 ? 'black' : 'white');
+
+function tileEl(value, cls) {
+  const el = document.createElement('div');
+  el.className = `tile ${colorOf(value)} ${cls}`;
+  el.textContent = value;
+  return el;
+}
+
+/* ---------- networking ---------- */
+
+async function api(path, opts) {
+  const r = await fetch(path, opts);
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.error || r.statusText);
+  return data;
+}
+
+async function findGame() {
+  $('err').textContent = '';
+  const name = $('nameInput').value.trim() || 'Player';
+  try {
+    session = await api('/api/join', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    });
+    localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+    selected = null; curRound = 0;
+    await poll();
+  } catch (e) {
+    $('err').textContent = 'Could not reach the server.';
+  }
+}
+
+async function poll() {
+  if (!session) return;
+  try {
+    const q = `?game=${session.game}&player=${session.player}&token=${session.token}`;
+    latest = await api('/api/state' + q);
+    serverLeft = latest.time_left;
+    syncAt = Date.now();
+    render();
+  } catch (e) {
+    // stale/over session (e.g. server restarted) → back to join
+    clearSession('This game is no longer available.');
+  }
+}
+
+function clearSession(msg) {
+  session = null; latest = null;
+  localStorage.removeItem(SESSION_KEY);
+  $('err').textContent = msg || '';
+  showScreen('join');
+}
+
+async function lockTile(tile) {
+  if (!session) return;
+  try {
+    latest = await api('/api/lock', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...session, tile }),
+    });
+    serverLeft = latest.time_left; syncAt = Date.now();
+    selected = null;
+    render();
+  } catch (e) {
+    poll();  // resync on any rejection (round may have advanced)
+  }
+}
+
+/* ---------- screens ---------- */
+
+function showScreen(name) {
+  $('app').classList.toggle('hidden', !(name === 'game'));
+  $('joinModal').classList.toggle('hidden', name !== 'join');
+  $('waitModal').classList.toggle('hidden', name !== 'wait');
+}
+
+function localTimeLeft() {
+  return Math.max(0, serverLeft - (Date.now() - syncAt) / 1000);
+}
+
+function render() {
+  if (!latest) return;
+  if (latest.phase === 'waiting') {
+    showScreen('wait');
+    $('waitHint').textContent = 'Share this page\'s address with a friend, or open it on another device and tap "Find a game".';
+    return;
+  }
+  showScreen('game');
+
+  // reset selection when a new round begins
+  if (latest.round !== curRound) { curRound = latest.round; selected = null; }
+
+  // opponent header
+  $('oppName').textContent = latest.opp_name || 'Opponent';
+  $('oppScore').textContent = latest.opp_score;
+  const oppStatus = $('oppStatus');
+  if (latest.phase === 'playing') {
+    oppStatus.textContent = latest.opp_locked ? 'locked in ✓' : 'deciding…';
+    oppStatus.classList.toggle('locked', latest.opp_locked);
+  } else { oppStatus.textContent = ''; }
+
+  // you header
+  $('youName').textContent = latest.your_name || 'You';
+  $('youScore').textContent = latest.your_score;
+  $('youStatus').classList.toggle('hidden', latest.you_locked === null);
+
+  renderCenter();
+  renderHand();
+  renderHistory();
+  renderOver();
+}
+
+function renderCenter() {
+  const playing = latest.phase === 'playing';
+  $('play').classList.toggle('hidden', !playing);
+  $('reveal').classList.toggle('hidden', latest.phase !== 'reveal');
+
+  if (playing) {
+    $('roundLabel').textContent = `Round ${latest.round} / ${latest.rounds}`;
+    const t = localTimeLeft();
+    $('timer').textContent = Math.ceil(t);
+    $('timer').classList.toggle('low', t <= 5);
+    $('timerFill').style.width = (100 * t / latest.round_seconds) + '%';
+    $('prompt').textContent = latest.you_locked === null
+      ? 'Choose a tile and lock it in'
+      : 'Locked — waiting for your opponent';
+  } else if (latest.phase === 'reveal') {
+    const h = latest.history[latest.history.length - 1];
+    if (h) {
+      const you = $('revYou');
+      you.className = `tile big ${colorOf(h.your_tile)}`;
+      you.textContent = h.your_tile;
+      const opp = $('revOpp');
+      opp.className = `tile big ${h.opp_color} swatch`;  // colour shown, number hidden
+      $('revOppCap').textContent = latest.opp_name || 'Opponent';
+      const banner = $('revBanner');
+      const map = { win: ['You win the round!', 'win'], lose: ['You lose the round', 'lose'], tie: ['Tie — no points', 'tie'] };
+      const [text, cls] = map[h.result];
+      banner.textContent = text;
+      banner.className = 'banner ' + cls;
+      $('revVs').textContent = { win: '>', lose: '<', tie: '=' }[h.result];
+    }
+    $('revealNext').textContent = latest.winner ? 'Final result…' : 'Next round starting…';
+  }
+}
+
+function renderHand() {
+  const hand = $('hand');
+  hand.innerHTML = '';
+  const locked = latest.you_locked !== null;
+  const active = latest.phase === 'playing' && !locked;
+  for (const t of latest.your_hand) {
+    const el = tileEl(t, 'big');
+    if (selected === t) el.classList.add('sel');
+    if (!active) el.classList.add('disabled');
+    else el.addEventListener('click', () => { selected = (selected === t ? null : t); render(); });
+    hand.appendChild(el);
+  }
+  // if locked this round, show the locked tile too (it's no longer in your_hand)
+  if (locked) {
+    const el = tileEl(latest.you_locked, 'big');
+    el.classList.add('sel');
+    hand.appendChild(el);
+  }
+  $('lockBtn').classList.toggle('hidden', locked);
+  $('lockBtn').disabled = !active || selected === null;
+  $('lockedNote').classList.toggle('hidden', !(locked && !latest.opp_locked && latest.phase === 'playing'));
+}
+
+function renderHistory() {
+  const wrap = $('history');
+  wrap.innerHTML = '';
+  latest.history.forEach((h, i) => {
+    const cell = document.createElement('div');
+    cell.className = 'hcell';
+    const rnum = document.createElement('div');
+    rnum.className = 'rnum'; rnum.textContent = 'R' + (i + 1);
+    const stack = document.createElement('div');
+    stack.className = 'hstack';
+    stack.appendChild(tileEl(h.your_tile, 'mini'));
+    const opp = document.createElement('div');
+    opp.className = `tile swatch ${h.opp_color}`;
+    stack.appendChild(opp);
+    const res = document.createElement('div');
+    res.className = 'res ' + h.result;
+    res.textContent = { win: 'W', lose: 'L', tie: 'T' }[h.result];
+    cell.append(rnum, stack, res);
+    wrap.appendChild(cell);
+  });
+  wrap.scrollLeft = wrap.scrollWidth;
+}
+
+function renderOver() {
+  const over = latest.phase === 'over';
+  $('overModal').classList.toggle('hidden', !over);
+  if (!over) return;
+  const r = $('overResult');
+  const map = { you: ['You win! 🎉', 'win'], opp: ['You lose', 'lose'], draw: ['Draw', 'draw'] };
+  const [text, cls] = map[latest.winner] || ['Game over', 'draw'];
+  r.textContent = text; r.className = 'big-result ' + cls;
+  $('overScore').textContent = `${latest.your_name || 'You'} ${latest.your_score} — ${latest.opp_score} ${latest.opp_name || 'Opponent'}`;
+}
+
+/* ---------- timer tick + polling loops ---------- */
+
+function tick() {
+  if (latest && latest.phase === 'playing') {
+    const t = localTimeLeft();
+    $('timer').textContent = Math.ceil(t);
+    $('timer').classList.toggle('low', t <= 5);
+    $('timerFill').style.width = (100 * t / latest.round_seconds) + '%';
+    // auto-lock the selected tile just before time runs out
+    if (t <= 2 && latest.you_locked === null && selected !== null) {
+      lockTile(selected);
+    }
+  }
+}
+
+/* ---------- wiring ---------- */
+
+$('findBtn').addEventListener('click', findGame);
+$('nameInput').addEventListener('keydown', e => { if (e.key === 'Enter') findGame(); });
+$('lockBtn').addEventListener('click', () => { if (selected !== null) lockTile(selected); });
+$('cancelBtn').addEventListener('click', () => clearSession());
+$('againBtn').addEventListener('click', () => { $('overModal').classList.add('hidden'); findGame(); });
+$('rulesBtn').addEventListener('click', () => $('rulesModal').classList.remove('hidden'));
+$('closeRulesBtn').addEventListener('click', () => $('rulesModal').classList.add('hidden'));
+
+$('joinHint').textContent = 'Two players, one device each. First to 5 points wins.';
+
+// resume a saved session if present
+const saved = (() => { try { return JSON.parse(localStorage.getItem(SESSION_KEY)); } catch { return null; } })();
+if (saved && saved.game) { session = saved; poll(); }
+else showScreen('join');
+
+setInterval(() => { if (session) poll(); }, 1000);
+setInterval(tick, 250);
+</script>
+</body>
+</html>

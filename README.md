@@ -35,3 +35,32 @@ The red dots on each tile show its move directions.
   1. Capture the enemy 王.
   2. Move your own 王 into the opponent's territory and survive your opponent's next move.
   3. Your opponent has no legal move (house rule; practically unreachable).
+
+---
+
+# Black and White 흑과 백
+
+A second Genius death match in this repo (S2/S4): a **simultaneous, hidden-information** game. Unlike Twelve Janggi it can't be played hot-seat — both players choose at the same time and must not see each other's tile — so it runs on a small **game server** that holds the hidden state and sends each player only their own view.
+
+## Run it
+
+Python 3, stdlib only:
+
+```sh
+python3 py/bw_server.py            # default port 8770
+```
+
+Open the printed URL on two devices (or two browser tabs); each taps **Find a game** to be matched, then play. On phones, both devices use `http://<your-laptop-ip>:8770` over the same Wi-Fi.
+
+## Rules
+
+- You each hold 9 tiles, **0–8**. Even numbers are **black** (0,2,4,6,8), odd are **white** (1,3,5,7).
+- Over **9 rounds**, both players secretly lock one tile before a countdown (a random remaining tile is auto-played if you don't). The **higher number wins** the round (+1 point); ties score nothing.
+- You only ever see the opponent's tile **colour** and the round result — never their exact number, even afterward. Track what they've spent to deduce what's left.
+- Most points after 9 rounds wins; reaching **5** clinches it; equal points is a draw.
+
+## Why it isn't on GitHub Pages
+
+Pages serves static files only, and a hidden-information game needs a server to be authoritative (a client can't hold the full state without leaking the opponent's tiles). So Twelve Janggi is on Pages; Black and White runs from `bw_server.py`.
+
+An AI opponent is planned but not built yet — negamax doesn't apply here (simultaneous + hidden info calls for a randomized / game-theoretic agent), so it will be a separate agent type. `py/black_and_white.py` already holds the rules and the `observe()` masking it will use.
