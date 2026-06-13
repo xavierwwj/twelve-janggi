@@ -13,13 +13,13 @@ import negamax
 import twelve_janggi as engine
 
 LEVELS = {
-    # mirrors the presets in index.html
-    'easy':   dict(max_depth=2,  time_ms=300,  random_margin=14),
-    'normal': dict(max_depth=5,  time_ms=800,  random_margin=6),
+    # mirrors the presets in index.html (calibrated with tune.py)
+    'easy':   dict(max_depth=2,  time_ms=300,  margin_mean=52, margin_std=21),
+    'normal': dict(max_depth=5,  time_ms=800,  margin_mean=18, margin_std=8),
     'hard':   dict(max_depth=12, time_ms=2000),
     # fast variants for batch experiments
     'blitz':  dict(max_depth=4,  time_ms=80),
-    'random': dict(max_depth=1,  time_ms=50, random_margin=10_000),
+    'random': dict(max_depth=1,  time_ms=50, margin_mean=10_000),
 }
 
 

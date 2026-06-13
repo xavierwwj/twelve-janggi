@@ -16,16 +16,32 @@
 const Negamax = (() => {
   const WIN_SCORE = 100000;
 
+  function gaussian(mean, std) {
+    const u = 1 - Math.random(), v = Math.random();
+    return mean + std * Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+  }
+
   /**
    * Pick a move via alpha-beta negamax with time-limited iterative deepening.
-   * opts: { maxDepth=8, timeMs=1000, randomMargin=0 }
-   * randomMargin > 0 picks uniformly among root moves scoring within that
-   * margin of the best (used for weaker, less predictable play).
+   * opts: { maxDepth=8, timeMs=1000, marginMean=0, marginStd=0, stats }
+   *
+   * Stochastic play (Boltzmann-style mistakes): each call samples a margin
+   * from |Normal(marginMean, marginStd)| and picks uniformly among root moves
+   * scoring within that margin of the best. The mean sets the typical mistake
+   * size, the spread sets how often unusually big or small ones occur; small
+   * mistakes stay frequent, big ones rare. Forced wins are immune: any losing
+   * or mate-missing move scores ~WIN_SCORE below the best and never enters
+   * the pool. Both 0 (default) = deterministic best play.
+   *
+   * Pass `stats: {}` to receive { margin, best, chosen, regret } for tuning.
    */
   function chooseMove(game, state, opts = {}) {
     const maxDepth = opts.maxDepth ?? 8;
     const timeMs = opts.timeMs ?? 1000;
-    const randomMargin = opts.randomMargin ?? 0;
+    const marginMean = opts.marginMean ?? 0;
+    const marginStd = opts.marginStd ?? 0;
+    const stochastic = marginMean > 0 || marginStd > 0;
+    const margin = stochastic ? Math.abs(gaussian(marginMean, marginStd)) : 0;
     const order = game.orderMoves ? game.orderMoves.bind(game) : (s, ms) => ms;
 
     const rootMoves = game.legalMoves(state);
@@ -62,9 +78,9 @@ const Negamax = (() => {
           let sc;
           if (child.winner !== null) sc = child.winner === state.turn ? WIN_SCORE - 1 : -(WIN_SCORE - 1);
           else if (depth <= 1) sc = -game.evaluate(child, child.turn);
-          // randomMargin needs exact root scores, so it forgoes the root
+          // stochastic play needs exact root scores, so it forgoes the root
           // alpha bound (a bounded fail-low would collapse the random pool)
-          else sc = -search(child, depth - 1, -WIN_SCORE * 2, randomMargin ? WIN_SCORE * 2 : -alpha, 1);
+          else sc = -search(child, depth - 1, -WIN_SCORE * 2, stochastic ? WIN_SCORE * 2 : -alpha, 1);
           scored.push([mv, sc]);
           if (sc > alpha) alpha = sc;
         }
@@ -77,12 +93,22 @@ const Negamax = (() => {
       if (e !== 'timeout') throw e;
     }
 
-    if (randomMargin && bestScored) {
+    let chosen = bestMove;
+    let chosenScore = bestScored ? bestScored[0][1] : 0;
+    if (stochastic && bestScored) {
       const top = bestScored[0][1];
-      const pool = bestScored.filter(([, sc]) => sc >= top - randomMargin).map(([mv]) => mv);
-      return pool[Math.floor(Math.random() * pool.length)];
+      const pool = bestScored.filter(([, sc]) => sc >= top - margin);
+      const pick = pool[Math.floor(Math.random() * pool.length)];
+      chosen = pick[0];
+      chosenScore = pick[1];
     }
-    return bestMove;
+    if (opts.stats && bestScored) {
+      opts.stats.margin = margin;
+      opts.stats.best = bestScored[0][1];
+      opts.stats.chosen = chosenScore;
+      opts.stats.regret = bestScored[0][1] - chosenScore;
+    }
+    return chosen;
   }
 
   return { chooseMove, WIN_SCORE };

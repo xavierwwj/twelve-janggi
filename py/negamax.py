@@ -14,12 +14,22 @@ class _Timeout(Exception):
     pass
 
 
-def choose_move(engine, state, max_depth=8, time_ms=1000, random_margin=0):
+def choose_move(engine, state, max_depth=8, time_ms=1000,
+                margin_mean=0, margin_std=0, stats=None):
     """Pick a move for state['turn'].
 
-    random_margin > 0 picks uniformly among root moves scoring within that
-    margin of the best (weaker, less predictable play).
+    Stochastic play (Boltzmann-style mistakes): each call samples a margin
+    from |Normal(margin_mean, margin_std)| and picks uniformly among root
+    moves scoring within that margin of the best. The mean sets the typical
+    mistake size, the spread sets how often unusually big or small ones
+    occur; small mistakes stay frequent, big ones rare. Forced wins are
+    immune: any losing or mate-missing move scores ~WIN_SCORE below the best
+    and never enters the pool. Both 0 (default) = deterministic best play.
+
+    Pass `stats={}` to receive margin / best / chosen / regret for tuning.
     """
+    stochastic = margin_mean > 0 or margin_std > 0
+    margin = abs(random.gauss(margin_mean, margin_std)) if stochastic else 0
     order = getattr(engine, 'order_moves', lambda s, ms: ms)
     root_moves = engine.legal_moves(state)
     if not root_moves:
@@ -64,10 +74,10 @@ def choose_move(engine, state, max_depth=8, time_ms=1000, random_margin=0):
                 elif depth <= 1:
                     sc = -engine.evaluate(child, child['turn'])
                 else:
-                    # random_margin needs exact root scores, so it forgoes the
+                    # stochastic play needs exact root scores, so it forgoes the
                     # root alpha bound (a bounded fail-low would collapse the pool)
                     sc = -search(child, depth - 1, -WIN_SCORE * 2,
-                                 (WIN_SCORE * 2) if random_margin else -alpha, 1)
+                                 (WIN_SCORE * 2) if stochastic else -alpha, 1)
                 scored.append((mv, sc))
                 if sc > alpha:
                     alpha = sc
@@ -78,8 +88,14 @@ def choose_move(engine, state, max_depth=8, time_ms=1000, random_margin=0):
     except _Timeout:
         pass
 
-    if random_margin and best_scored:
+    chosen, chosen_score = best_move, best_scored[0][1] if best_scored else 0
+    if stochastic and best_scored:
         top = best_scored[0][1]
-        pool = [mv for mv, sc in best_scored if sc >= top - random_margin]
-        return random.choice(pool)
-    return best_move
+        pool = [(mv, sc) for mv, sc in best_scored if sc >= top - margin]
+        chosen, chosen_score = random.choice(pool)
+    if stats is not None and best_scored:
+        stats['margin'] = margin
+        stats['best'] = best_scored[0][1]
+        stats['chosen'] = chosen_score
+        stats['regret'] = best_scored[0][1] - chosen_score
+    return chosen

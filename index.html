@@ -328,8 +328,9 @@
   </div>
 </div>
 
-<script src="core/negamax.js"></script>
-<script src="games/twelve-janggi/engine.js"></script>
+<!-- bump ?v= when these files change so browsers drop their cached copies -->
+<script src="core/negamax.js?v=2"></script>
+<script src="games/twelve-janggi/engine.js?v=2"></script>
 <script>
 'use strict';
 
@@ -340,12 +341,14 @@ const G = TwelveJanggi;
 const { ROWS, COLS, MOVES, HANJA, KOR } = G;
 
 // agent presets (UI concern: how strong each menu option is).
-// randomMargin picks among root moves within that score margin of the best;
-// a man (pawn) is worth 10, so easy's 14 lets it genuinely blunder material
-// while normal's 6 only allows positional slack, never an outright hang.
+// Each move samples a tolerance from |Normal(marginMean, marginStd)| and
+// plays a random move within it of the best — frequent small mistakes,
+// rarer big ones. Calibrated by self-play (py/tune.py): easy blunders a
+// minister/general roughly once every 7 turns, normal drops a man roughly
+// once every 7 turns and a bigger piece almost never. Hard is deterministic.
 const LEVELS = {
-  easy:   { maxDepth: 2,  timeMs: 300,  randomMargin: 14 },
-  normal: { maxDepth: 5,  timeMs: 800,  randomMargin: 6 },
+  easy:   { maxDepth: 2,  timeMs: 300,  marginMean: 52, marginStd: 21 },
+  normal: { maxDepth: 5,  timeMs: 800,  marginMean: 18, marginStd: 8 },
   hard:   { maxDepth: 12, timeMs: 2000 },
 };
 

@@ -46,12 +46,15 @@ States expose exactly two fields to non-engine code: `turn` (0 or 1) and `winner
 
 ### Agents
 
-`core/negamax.js` / `py/negamax.py` implement minimax (negamax form) with alpha-beta pruning and time-limited iterative deepening, parameterised by `{maxDepth, timeMs, randomMargin}`. They contain **zero game knowledge** — point them at any engine implementing the API.
+`core/negamax.js` / `py/negamax.py` implement minimax (negamax form) with alpha-beta pruning and time-limited iterative deepening, parameterised by `{maxDepth, timeMs, marginMean, marginStd}`. They contain **zero game knowledge** — point them at any engine implementing the API.
+
+`marginMean`/`marginStd` make the agent deliberately fallible: each move it samples a tolerance from |Normal(mean, std)| and plays a random move scoring within that tolerance of the best — so small mistakes are frequent and big ones rare, and both the typical mistake size and its frequency are tunable. Forced wins are immune (losing moves score ~100000 below the best and never enter the pool). The in-game levels were calibrated by self-play with `py/tune.py`: **Easy** (depth 2, mean 52/std 21) blunders a minister/general roughly once every 7 turns; **Normal** (depth 5, mean 18/std 8) drops a man roughly once every 7 turns and bigger pieces almost never; **Hard** (depth 12) always plays its best move.
 
 `py/selfplay.py` pits two agent configurations against each other through the same API:
 
 ```sh
 cd py && python3 selfplay.py --games 20 --p0 blitz --p1 normal
+cd py && python3 tune.py --depth 2 --mean 52 --std 21 --games 30   # measure mistake rates
 ```
 
 ### Adding a new game
