@@ -13,6 +13,8 @@ On a phone, use the GitHub Pages deployment of this repo, and "Add to Home Scree
 - **2 Players** — over the board; the top player's pieces and tray are rotated 180° so you can lay a phone flat between you.
 - **vs AI** — you play Green (초, bottom), the AI plays Red (홍, top). Pick who moves first and a level (Easy / Normal / Hard).
 
+Buttons: `↺` menu · `↶` undo (in vs-AI it takes back the AI's reply and your move) · `?` rules. A game in progress, including its undo history, survives closing the page.
+
 ## Architecture
 
 ```
@@ -38,6 +40,7 @@ An **engine** is an object/module that owns all game knowledge. Agents and tooli
 | `applyMove(state, move)` | mutate: perform move, advance `turn`, set `winner` when the game ends |
 | `evaluate(state, player)` | finite heuristic for non-terminal states, from `player`'s perspective |
 | `orderMoves(state, moves)` | *(optional)* best-first hint for alpha-beta cutoffs |
+| `name`, `rules` | display metadata: `rules` is a structured description (title + sections with items/tables) that the UI renders into its rules dialog, so game knowledge never leaks into UI code |
 
 States expose exactly two fields to non-engine code: `turn` (0 or 1) and `winner` (`null`/`None` while running). Everything else — board shape, hands, special rules — is private to the engine.
 

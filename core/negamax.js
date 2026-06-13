@@ -62,7 +62,9 @@ const Negamax = (() => {
           let sc;
           if (child.winner !== null) sc = child.winner === state.turn ? WIN_SCORE - 1 : -(WIN_SCORE - 1);
           else if (depth <= 1) sc = -game.evaluate(child, child.turn);
-          else sc = -search(child, depth - 1, -WIN_SCORE * 2, -alpha, 1);
+          // randomMargin needs exact root scores, so it forgoes the root
+          // alpha bound (a bounded fail-low would collapse the random pool)
+          else sc = -search(child, depth - 1, -WIN_SCORE * 2, randomMargin ? WIN_SCORE * 2 : -alpha, 1);
           scored.push([mv, sc]);
           if (sc > alpha) alpha = sc;
         }

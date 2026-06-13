@@ -160,7 +160,9 @@
     z-index: 20;
   }
   #menuBtn { left: 12px; }
+  #undoBtn { left: 60px; }
   #rulesBtn { right: 12px; }
+  .corner-btn:disabled { opacity: .35; cursor: default; }
 
   /* ---- modals ---- */
   .modal {
@@ -243,7 +245,8 @@
     cursor: pointer;
   }
   #againBtn { background: #eab308; color: #1c1917; }
-  #changeBtn { background: #4a3a2f; color: #f1e8dc; }
+  #undoBtn2, #changeBtn { background: #4a3a2f; color: #f1e8dc; }
+  #undoBtn2.hidden { display: none; }
 
   /* rules */
   #rulesCard { font-size: 14px; line-height: 1.55; width: min(92vw, 460px); }
@@ -276,6 +279,7 @@
 </div>
 
 <button class="corner-btn" id="menuBtn" title="New game / mode">↺</button>
+<button class="corner-btn" id="undoBtn" title="Undo move">↶</button>
 <button class="corner-btn" id="rulesBtn" title="Rules">?</button>
 
 <div id="menu" class="modal">
@@ -299,6 +303,7 @@
   <div class="win-msg flipped" id="winMsgTop"></div>
   <div class="row">
     <button id="againBtn">Play again</button>
+    <button id="undoBtn2">Undo</button>
     <button id="changeBtn">Menu</button>
   </div>
   <div class="win-msg" id="winMsgBottom"></div>
@@ -306,46 +311,17 @@
 
 <div id="rulesModal" class="modal hidden">
   <div class="card" id="rulesCard">
-    <h2>Twelve Janggi 십이장기</h2>
+    <h2 id="rulesTitle"></h2>
 
     <h3>How to play</h3>
     <ul>
       <li>Tap a piece to see its legal moves (<b style="color:#4ade80">green dot</b> = move,
         <b style="color:#f87171">red outline</b> = capture), then tap the destination.</li>
       <li>Tap a captured piece in your tray, then tap an empty square to drop it.</li>
+      <li>Buttons: <b>↺</b> menu &nbsp;·&nbsp; <b>↶</b> undo &nbsp;·&nbsp; <b>?</b> rules.</li>
     </ul>
 
-    <h3>Setup</h3>
-    <ul>
-      <li>3×4 board. The row nearest each player is their <b>territory</b>. Each side starts with
-        相 · 王 · 將 on their territory row and a 子 in front of the king.</li>
-    </ul>
-
-    <h3>Pieces</h3>
-    <table>
-      <tr><th>Piece</th><th>Name</th><th>Movement</th></tr>
-      <tr><td class="pc">王</td><td>king (왕)</td><td>1 step, any direction</td></tr>
-      <tr><td class="pc">將</td><td>general (장)</td><td>1 step orthogonally</td></tr>
-      <tr><td class="pc">相</td><td>minister (상)</td><td>1 step diagonally</td></tr>
-      <tr><td class="pc">子</td><td>man (자)</td><td>1 step forward</td></tr>
-      <tr><td class="pc">侯</td><td>feudal lord (후)</td><td>1 step any direction except diagonally backward</td></tr>
-    </table>
-    <p style="margin:6px 0">The red dots on each tile show its move directions.</p>
-
-    <h3>Captures &amp; drops</h3>
-    <ul>
-      <li>Moving onto an enemy piece captures it into your <b>hand</b> (a captured 侯 reverts to 子).</li>
-      <li>Instead of moving, you may <b>drop</b> a hand piece onto any empty square
-        <b>outside the opponent's territory</b>.</li>
-      <li>A 子 that moves into the opponent's territory promotes to 侯.</li>
-    </ul>
-
-    <h3>Win conditions</h3>
-    <ol>
-      <li>Capture the enemy 王.</li>
-      <li>Move your own 王 into the opponent's territory and survive your opponent's next move.</li>
-      <li>Your opponent has no legal move.</li>
-    </ol>
+    <div id="rulesBody"></div>
     <p style="text-align:center; margin-bottom:0">
       <button id="closeRulesBtn" class="menu-btn" style="display:inline-block;width:auto;padding:9px 26px">Close</button>
     </p>
@@ -363,11 +339,14 @@
 const G = TwelveJanggi;
 const { ROWS, COLS, MOVES, HANJA, KOR } = G;
 
-// agent presets (UI concern: how strong each menu option is)
+// agent presets (UI concern: how strong each menu option is).
+// randomMargin picks among root moves within that score margin of the best;
+// a man (pawn) is worth 10, so easy's 14 lets it genuinely blunder material
+// while normal's 6 only allows positional slack, never an outright hang.
 const LEVELS = {
-  easy:   { maxDepth: 2,  timeMs: 500,  randomMargin: 8 },
-  normal: { maxDepth: 8,  timeMs: 1000 },
-  hard:   { maxDepth: 14, timeMs: 2500 },
+  easy:   { maxDepth: 2,  timeMs: 300,  randomMargin: 14 },
+  normal: { maxDepth: 5,  timeMs: 800,  randomMargin: 6 },
+  hard:   { maxDepth: 12, timeMs: 2000 },
 };
 
 const $ = id => document.getElementById(id);
@@ -378,9 +357,19 @@ let selected = null;     // {kind:'board', idx} | {kind:'hand', handIdx}
 let thinking = false;    // AI is computing
 let level = 'normal';
 let lastConfig = null;   // {mode, first} for "play again"
+let history = [];        // snapshots taken before each applied move
+
+function snapshot() {
+  const c = G.cloneState(S);
+  c.mode = S.mode;
+  c.ai_player = S.ai_player;
+  c.level = S.level;
+  c.last = S.last ? S.last.slice() : [];
+  return c;
+}
 
 function save() {
-  try { localStorage.setItem(SAVE_KEY, JSON.stringify({ S, level, lastConfig })); }
+  try { localStorage.setItem(SAVE_KEY, JSON.stringify({ S, level, lastConfig, history })); }
   catch (e) { /* storage unavailable (private mode etc.) — play on without saving */ }
 }
 
@@ -391,6 +380,7 @@ function restore() {
       S = saved.S;
       level = saved.level || 'normal';
       lastConfig = saved.lastConfig || null;
+      history = Array.isArray(saved.history) ? saved.history : [];
       document.querySelectorAll('#levelSeg button').forEach(b =>
         b.classList.toggle('on', b.dataset.level === level));
       return true;
@@ -407,6 +397,7 @@ function startGame(mode, first) {
   S.level = level;
   S.last = [];
   lastConfig = { mode, first };
+  history = [];
   selected = null;
   $('menu').classList.add('hidden');
   render();
@@ -422,6 +413,7 @@ function maybeAI() {
   setTimeout(() => {
     const mv = Negamax.chooseMove(G, S, LEVELS[S.level || level] || LEVELS.normal);
     if (mv) {
+      history.push(snapshot());
       G.applyMove(S, mv);
       S.last = mv.drop ? [mv.to] : [mv.from, mv.to];
     }
@@ -432,12 +424,34 @@ function maybeAI() {
 }
 
 function playMove(mv) {
+  history.push(snapshot());
   G.applyMove(S, mv);
   S.last = mv.drop ? [mv.to] : [mv.from, mv.to];
   selected = null;
   render();
   save();
   maybeAI();
+}
+
+/* Undo one ply in PvP; in vs-AI, rewind to the last position where it was
+   the human's turn (i.e. takes back the AI's reply and your move). */
+function canUndo() {
+  if (!S || thinking || !history.length) return false;
+  if (S.mode === 'ai') return history.some(h => h.turn !== S.ai_player);
+  return true;
+}
+
+function undo() {
+  if (!canUndo()) return;
+  let idx = history.length - 1;
+  if (S.mode === 'ai') {
+    while (idx >= 0 && history[idx].turn === S.ai_player) idx--;
+  }
+  S = history[idx];
+  history.length = idx;
+  selected = null;
+  render();
+  save();
 }
 
 /* ---------- interaction ---------- */
@@ -546,8 +560,11 @@ function render() {
     });
   }
 
+  $('undoBtn').disabled = !canUndo();
+
   const overlay = $('overlay');
   if (S.winner !== null) {
+    $('undoBtn2').classList.toggle('hidden', !canUndo());
     const name = S.winner === 0 ? '초 Green' : (isAi ? '🤖 AI (Red)' : '홍 Red');
     const why = {
       capture: 'captured the King!',
@@ -580,6 +597,8 @@ $('levelSeg').addEventListener('click', e => {
   document.querySelectorAll('#levelSeg button').forEach(b => b.classList.toggle('on', b === btn));
   save();
 });
+$('undoBtn').addEventListener('click', undo);
+$('undoBtn2').addEventListener('click', undo);
 $('resumeBtn').addEventListener('click', () => $('menu').classList.add('hidden'));
 $('menuBtn').addEventListener('click', () => {
   $('resumeBtn').classList.toggle('hidden', !S || S.winner !== null);
@@ -593,6 +612,39 @@ $('changeBtn').addEventListener('click', () => {
 });
 $('rulesBtn').addEventListener('click', () => $('rulesModal').classList.remove('hidden'));
 $('closeRulesBtn').addEventListener('click', () => $('rulesModal').classList.add('hidden'));
+
+// build the rules modal from the engine's display metadata (G.rules)
+function buildRules() {
+  $('rulesTitle').textContent = G.rules.title;
+  const body = $('rulesBody');
+  body.innerHTML = '';
+  for (const sec of G.rules.sections) {
+    const h = document.createElement('h3');
+    h.textContent = sec.heading;
+    body.appendChild(h);
+    if (sec.table) {
+      const tbl = document.createElement('table');
+      tbl.innerHTML =
+        '<tr>' + sec.table.headers.map(x => `<th>${x}</th>`).join('') + '</tr>' +
+        sec.table.rows.map(r =>
+          `<tr><td class="pc">${r[0]}</td>` + r.slice(1).map(c => `<td>${c}</td>`).join('') + '</tr>'
+        ).join('');
+      body.appendChild(tbl);
+    }
+    if (sec.items) {
+      const list = document.createElement(sec.ordered ? 'ol' : 'ul');
+      list.innerHTML = sec.items.map(x => `<li>${x}</li>`).join('');
+      body.appendChild(list);
+    }
+    if (sec.note) {
+      const p = document.createElement('p');
+      p.style.margin = '6px 0';
+      p.innerHTML = sec.note;
+      body.appendChild(p);
+    }
+  }
+}
+buildRules();
 
 // restore a saved game (if any) behind the menu; offer resume if it's still live
 if (restore()) {

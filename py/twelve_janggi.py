@@ -171,3 +171,34 @@ def order_moves(st, moves):
                 return -(10_000 if cap[0] == 'wang' else VAL[cap[0]])
         return 0
     return sorted(moves, key=key)
+
+
+# ---- display metadata (mirrors games/twelve-janggi/engine.js `rules`) ----
+
+RULES = {
+    'title': 'Twelve Janggi 십이장기',
+    'sections': [
+        {'heading': 'Setup', 'items': [
+            '3×4 board. The row nearest each player is their territory. Each side starts with '
+            '相 · 王 · 將 on their territory row and a 子 in front of the king.']},
+        {'heading': 'Pieces', 'table': {
+            'headers': ['Piece', 'Name', 'Movement'],
+            'rows': [
+                ['王', 'king (왕)', '1 step, any direction'],
+                ['將', 'general (장)', '1 step orthogonally'],
+                ['相', 'minister (상)', '1 step diagonally'],
+                ['子', 'man (자)', '1 step forward'],
+                ['侯', 'feudal lord (후)', '1 step any direction except diagonally backward'],
+            ]},
+            'note': 'The red dots on each tile show its move directions.'},
+        {'heading': 'Captures & drops', 'items': [
+            'Moving onto an enemy piece captures it into your hand (a captured 侯 reverts to 子).',
+            'Instead of moving, you may drop a hand piece onto any empty square '
+            'outside the opponent\'s territory.',
+            'A 子 that moves into the opponent\'s territory promotes to 侯.']},
+        {'heading': 'Win conditions', 'ordered': True, 'items': [
+            'Capture the enemy 王.',
+            'Move your own 王 into the opponent\'s territory and survive your opponent\'s next move.',
+            'Your opponent has no legal move.']},
+    ],
+}

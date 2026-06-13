@@ -64,7 +64,10 @@ def choose_move(engine, state, max_depth=8, time_ms=1000, random_margin=0):
                 elif depth <= 1:
                     sc = -engine.evaluate(child, child['turn'])
                 else:
-                    sc = -search(child, depth - 1, -WIN_SCORE * 2, -alpha, 1)
+                    # random_margin needs exact root scores, so it forgoes the
+                    # root alpha bound (a bounded fail-low would collapse the pool)
+                    sc = -search(child, depth - 1, -WIN_SCORE * 2,
+                                 (WIN_SCORE * 2) if random_margin else -alpha, 1)
                 scored.append((mv, sc))
                 if sc > alpha:
                     alpha = sc
