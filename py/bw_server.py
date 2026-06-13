@@ -47,7 +47,18 @@ def new_game():
         'phase': 'waiting',     # waiting | playing | reveal | over
         'deadline': 0.0,
         'reveal_until': 0.0,
+        'rematch': [False, False],
     }
+
+
+def reset_for_rematch(g):
+    """Re-deal the SAME game, keeping both players in their seats. No
+    matchmaking, so neither player can be paired against themselves."""
+    g['state'] = bw.initial_state()
+    g['phase'] = 'playing'
+    g['deadline'] = time.time() + ROUND_SECONDS
+    g['reveal_until'] = 0.0
+    g['rematch'] = [False, False]
 
 
 def join(name):
@@ -109,6 +120,8 @@ def view(g, gid, player):
         'opp_joined': g['phase'] != 'waiting',
         'time_left': round(time_left, 1),
         'round_seconds': ROUND_SECONDS,
+        'rematch_me': g['rematch'][player],
+        'rematch_opp': g['rematch'][opp],
     }
     out.update(bw.observe(g['state'], player))
     return out
@@ -198,6 +211,18 @@ class Handler(BaseHTTPRequestHandler):
                 except (ValueError, TypeError) as e:
                     return self._send({'error': str(e)}, 400)
                 advance(g)  # may resolve immediately if both have now locked
+                return self._send(view(g, body['game'], player))
+
+        if self.path == '/api/rematch':
+            with LOCK:
+                g, player, err = authed(body)
+                if err:
+                    return self._send({'error': err}, 400)
+                if g['phase'] != 'over':
+                    return self._send({'error': 'game not over'}, 409)
+                g['rematch'][player] = True
+                if all(g['rematch']):
+                    reset_for_rematch(g)  # both agreed → re-deal the same game
                 return self._send(view(g, body['game'], player))
 
         self.send_error(404)

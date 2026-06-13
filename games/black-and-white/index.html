@@ -209,7 +209,9 @@
   <div class="card">
     <div class="big-result" id="overResult">—</div>
     <div class="finalscore" id="overScore"></div>
+    <div id="rematchNote" class="hint hidden" style="margin-top:0;margin-bottom:10px;color:#86efac"></div>
     <button class="btn" id="againBtn">Play again</button>
+    <button class="btn alt" id="leaveBtn">New opponent</button>
   </div>
 </div>
 
@@ -258,7 +260,12 @@ async function api(path, opts) {
   return data;
 }
 
+let joining = false;     // guard against double-join (which could self-pair)
+
 async function findGame() {
+  if (joining) return;
+  joining = true;
+  $('findBtn').disabled = true;
   $('err').textContent = '';
   const name = $('nameInput').value.trim() || 'Player';
   try {
@@ -271,20 +278,39 @@ async function findGame() {
     await poll();
   } catch (e) {
     $('err').textContent = 'Could not reach the server.';
+  } finally {
+    joining = false;
+    $('findBtn').disabled = false;
   }
 }
 
 async function poll() {
   if (!session) return;
+  const s = session;  // capture: ignore the response if the session changed mid-flight
   try {
-    const q = `?game=${session.game}&player=${session.player}&token=${session.token}`;
-    latest = await api('/api/state' + q);
+    const q = `?game=${s.game}&player=${s.player}&token=${s.token}`;
+    const data = await api('/api/state' + q);
+    if (session !== s) return;
+    latest = data;
     serverLeft = latest.time_left;
     syncAt = Date.now();
     render();
   } catch (e) {
-    // stale/over session (e.g. server restarted) → back to join
-    clearSession('This game is no longer available.');
+    if (session === s) clearSession('This game is no longer available.');
+  }
+}
+
+// rematch the SAME opponent — resets the current game, never re-matchmakes
+async function rematch() {
+  if (!session) return;
+  try {
+    latest = await api('/api/rematch', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(session),
+    });
+    render();
+  } catch (e) {
+    poll();
   }
 }
 
@@ -443,6 +469,19 @@ function renderOver() {
   const [text, cls] = map[latest.winner] || ['Game over', 'draw'];
   r.textContent = text; r.className = 'big-result ' + cls;
   $('overScore').textContent = `${latest.your_name || 'You'} ${latest.your_score} — ${latest.opp_score} ${latest.opp_name || 'Opponent'}`;
+
+  const again = $('againBtn');
+  const note = $('rematchNote');
+  if (latest.rematch_me) {
+    again.disabled = true;
+    again.textContent = 'Waiting for opponent…';
+    note.classList.add('hidden');
+  } else {
+    again.disabled = false;
+    again.textContent = 'Play again';
+    note.classList.toggle('hidden', !latest.rematch_opp);
+    if (latest.rematch_opp) note.textContent = `${latest.opp_name || 'Opponent'} wants a rematch!`;
+  }
 }
 
 /* ---------- timer tick + polling loops ---------- */
@@ -466,7 +505,8 @@ $('findBtn').addEventListener('click', findGame);
 $('nameInput').addEventListener('keydown', e => { if (e.key === 'Enter') findGame(); });
 $('lockBtn').addEventListener('click', () => { if (selected !== null) lockTile(selected); });
 $('cancelBtn').addEventListener('click', () => clearSession());
-$('againBtn').addEventListener('click', () => { $('overModal').classList.add('hidden'); findGame(); });
+$('againBtn').addEventListener('click', rematch);
+$('leaveBtn').addEventListener('click', () => clearSession());
 $('rulesBtn').addEventListener('click', () => $('rulesModal').classList.remove('hidden'));
 $('closeRulesBtn').addEventListener('click', () => $('rulesModal').classList.add('hidden'));
 
