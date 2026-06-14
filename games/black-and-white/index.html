@@ -50,6 +50,8 @@
   #timerBar { width: min(80vw, 360px); height: 6px; border-radius: 3px; background: #463a33; overflow: hidden; }
   #timerFill { height: 100%; background: #eab308; width: 100%; transition: width .25s linear; }
   #prompt { font-size: 15px; color: #e8dcc8; }
+  #leadCue { display: flex; align-items: center; gap: 8px; font-size: 14px; color: #e8dcc8; }
+  #leadCue .tile.swatch { width: 26px; height: 32px; font-size: 14px; }
 
   /* reveal banner */
   #reveal { display: flex; flex-direction: column; align-items: center; gap: 14px; }
@@ -149,6 +151,7 @@
       <div id="roundLabel">Round 1 / 9</div>
       <div id="timer">30</div>
       <div id="timerBar"><div id="timerFill"></div></div>
+      <div id="leadCue" class="hidden"></div>
       <div id="prompt">Choose a tile and lock it in</div>
     </div>
     <div id="reveal" class="hidden">
@@ -221,9 +224,10 @@
     <h2>Black and White 흑과 백</h2>
     <ul>
       <li>You each hold 9 tiles, <b>0–8</b>. Even numbers are <b>black</b> (0,2,4,6,8), odd are <b>white</b> (1,3,5,7).</li>
-      <li>Over <b>9 rounds</b>, you both secretly pick one tile and lock it in before the timer runs out. If you don't lock in time, a random remaining tile is played for you.</li>
-      <li>The <b>higher number wins</b> the round (+1 point); a tie scores nothing.</li>
-      <li>You only ever see your opponent's tile <b>colour</b> and whether you won — never their exact number, even afterwards. Track what they've spent to read what's left.</li>
+      <li>Over <b>9 rounds</b>, you each play one tile and the <b>higher number wins</b> the round (+1 point); a tie scores nothing.</li>
+      <li><b>Round 1</b>, you both lock in secretly at the same time. <b>After that, the winner of the previous round must choose first</b> — and the loser gets to see that tile's <b>colour</b> before responding. (A tie means the next round is simultaneous again.)</li>
+      <li>If you don't lock in before the timer, a random remaining tile is played for you.</li>
+      <li>You only ever see your opponent's tile <b>colour</b>, never their exact number — even afterwards. Track what they've spent to read what's left.</li>
       <li>Most points after 9 rounds wins. Reaching <b>5</b> clinches it. Equal points is a draw.</li>
     </ul>
     <button class="btn" id="closeRulesBtn" style="margin-top:8px">Close</button>
@@ -391,9 +395,31 @@ function renderCenter() {
     $('timer').textContent = Math.ceil(t);
     $('timer').classList.toggle('low', t <= 5);
     $('timerFill').style.width = (100 * t / latest.round_seconds) + '%';
-    $('prompt').textContent = latest.you_locked === null
-      ? 'Choose a tile and lock it in'
-      : 'Locked — waiting for your opponent';
+
+    // lead/respond cue: from round 2 on, the previous winner leads, the loser responds
+    const cue = $('leadCue');
+    cue.innerHTML = '';
+    cue.classList.add('hidden');
+    let prompt;
+    if (latest.you_locked !== null) {
+      prompt = latest.leader === 'you' ? 'Locked — opponent is responding…'
+                                       : 'Locked — waiting for your opponent';
+    } else if (!latest.your_turn) {
+      // you're the responder, waiting for the leader to choose first
+      prompt = `${latest.opp_name || 'Opponent'} won last round and chooses first…`;
+    } else if (latest.leader === 'you') {
+      prompt = 'You won last round — choose first';
+    } else if (latest.leader === 'opp' && latest.leader_color) {
+      // responder: you can see the leader's colour and react
+      const sw = document.createElement('div');
+      sw.className = `tile swatch ${latest.leader_color}`;
+      cue.append(`${latest.opp_name || 'Opponent'} led with`, sw);
+      cue.classList.remove('hidden');
+      prompt = 'Respond with a tile';
+    } else {
+      prompt = 'Choose a tile and lock it in';
+    }
+    $('prompt').textContent = prompt;
   } else if (latest.phase === 'reveal') {
     const h = latest.history[latest.history.length - 1];
     if (h) {
@@ -418,7 +444,7 @@ function renderHand() {
   const hand = $('hand');
   hand.innerHTML = '';
   const locked = latest.you_locked !== null;
-  const active = latest.phase === 'playing' && !locked;
+  const active = latest.phase === 'playing' && !locked && latest.your_turn;
   for (const t of latest.your_hand) {
     const el = tileEl(t, 'big');
     if (selected === t) el.classList.add('sel');
@@ -492,8 +518,8 @@ function tick() {
     $('timer').textContent = Math.ceil(t);
     $('timer').classList.toggle('low', t <= 5);
     $('timerFill').style.width = (100 * t / latest.round_seconds) + '%';
-    // auto-lock the selected tile just before time runs out
-    if (t <= 2 && latest.you_locked === null && selected !== null) {
+    // auto-lock the selected tile just before time runs out (only on your turn)
+    if (t <= 2 && latest.your_turn && latest.you_locked === null && selected !== null) {
       lockTile(selected);
     }
   }

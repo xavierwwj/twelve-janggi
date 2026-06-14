@@ -87,9 +87,19 @@ def advance(g):
     st = g['state']
     if g['phase'] == 'playing':
         if not bw.both_locked(st) and now >= g['deadline']:
-            for p in (0, 1):
-                if st['locked'][p] is None:
-                    st['locked'][p] = secrets.choice(st['hands'][p])
+            leader = st['leader']
+            if leader is None:                       # simultaneous round
+                for p in (0, 1):
+                    if st['locked'][p] is None:
+                        st['locked'][p] = secrets.choice(st['hands'][p])
+            elif st['locked'][leader] is None:       # leader missed leading
+                st['locked'][leader] = secrets.choice(st['hands'][leader])
+                if st['locked'][1 - leader] is None:  # responder now gets their own clock
+                    g['deadline'] = now + ROUND_SECONDS
+            else:                                    # responder missed responding
+                resp = 1 - leader
+                if st['locked'][resp] is None:
+                    st['locked'][resp] = secrets.choice(st['hands'][resp])
         if bw.both_locked(st):
             bw.resolve_round(st)
             g['phase'] = 'reveal'
@@ -210,6 +220,11 @@ class Handler(BaseHTTPRequestHandler):
                     bw.lock(g['state'], player, int(body.get('tile')))
                 except (ValueError, TypeError) as e:
                     return self._send({'error': str(e)}, 400)
+                st = g['state']
+                # leader just led → start the responder's response clock fresh
+                if st['leader'] is not None and player == st['leader'] \
+                        and st['locked'][1 - st['leader']] is None:
+                    g['deadline'] = time.time() + ROUND_SECONDS
                 advance(g)  # may resolve immediately if both have now locked
                 return self._send(view(g, body['game'], player))
 

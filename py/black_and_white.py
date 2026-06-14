@@ -38,16 +38,32 @@ def initial_state():
         'locked': [None, None],
         'history': [],
         'winner': None,
+        # who must lock first this round: the previous round's winner, or None
+        # in round 1 and after a tie (both play simultaneously then).
+        'leader': None,
     }
+
+
+def can_lock(state, player):
+    """Whether `player` may lock right now. In a led round the responder must
+    wait until the leader has committed (then they see the leader's colour)."""
+    if state['locked'][player] is not None:
+        return False
+    leader = state['leader']
+    if leader is None or player == leader:
+        return True
+    return state['locked'][leader] is not None  # responder waits for the leader
 
 
 def lock(state, player, tile):
     """Record `player`'s tile for the current round. Raises ValueError on an
-    illegal choice (game over, not in hand, or already locked)."""
+    illegal choice (game over, not your turn, not in hand, or already locked)."""
     if state['winner'] is not None:
         raise ValueError('game over')
     if state['locked'][player] is not None:
         raise ValueError('already locked this round')
+    if not can_lock(state, player):
+        raise ValueError('wait for your opponent to lead')
     if tile not in state['hands'][player]:
         raise ValueError('tile not in hand')
     state['locked'][player] = tile
@@ -69,6 +85,7 @@ def resolve_round(state):
     state['history'].append({'tiles': [t0, t1], 'winner': winner})
     state['locked'] = [None, None]
     state['round'] = len(state['history']) + 1
+    state['leader'] = winner  # next round: the winner leads (None after a tie)
     _decide(state)
 
 
@@ -109,6 +126,13 @@ def observe(state, player):
     locked_tile = state['locked'][player]
     hand = sorted(t for t in state['hands'][player] if t != locked_tile)
 
+    leader = state['leader']
+    leader_view = 'you' if leader == player else ('opp' if leader is not None else None)
+    # as the responder, you see the leader's colour once they've committed
+    leader_color = None
+    if leader is not None and player != leader and state['locked'][leader] is not None:
+        leader_color = color(state['locked'][leader])
+
     return {
         'your_hand': hand,
         'your_score': state['scores'][player],
@@ -119,4 +143,7 @@ def observe(state, player):
         'opp_locked': state['locked'][opp] is not None,  # boolean only
         'history': history,
         'winner': outcome,                               # 'you'|'opp'|'draw'|None
+        'leader': leader_view,                           # 'you'|'opp'|None
+        'your_turn': can_lock(state, player),            # may you lock right now
+        'leader_color': leader_color,                    # opp's colour if responding
     }
