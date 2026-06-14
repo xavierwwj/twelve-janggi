@@ -38,6 +38,7 @@ def initial_state():
         'locked': [None, None],
         'history': [],
         'winner': None,
+        'reason': None,   # how the game ended, e.g. 'resign' (else points/draw)
         # who must lock first this round: the previous round's winner, or None
         # in round 1 and after a tie (both play simultaneously then).
         'leader': None,
@@ -143,6 +144,7 @@ def observe(state, player):
         'opp_locked': state['locked'][opp] is not None,  # boolean only
         'history': history,
         'winner': outcome,                               # 'you'|'opp'|'draw'|None
+        'reason': state['reason'],                       # e.g. 'resign'
         'leader': leader_view,                           # 'you'|'opp'|None
         'your_turn': can_lock(state, player),            # may you lock right now
         'leader_color': leader_color,                    # opp's colour if responding

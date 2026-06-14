@@ -69,7 +69,7 @@ The free tier sleeps after ~15 min idle (first visit then cold-starts in ~30–6
 - Over **9 rounds** the **higher number wins** the round (+1 point); ties score nothing. You lock one tile before a countdown — a random remaining tile is auto-played if you don't.
 - **Round 1** is locked in simultaneously. After that the **winner of the previous round must choose first**, and the **loser sees that tile's colour before responding** — the edge that compensates for being behind. A tie makes the next round simultaneous again.
 - You only ever see the opponent's tile **colour**, never their exact number — even afterward. Track what they've spent to deduce what's left.
-- Most points after 9 rounds wins; reaching **5** clinches it; equal points is a draw.
+- Most points after 9 rounds wins; reaching **5** clinches it; equal points is a draw. You can **resign** at any time to concede.
 
 ## Why it isn't on GitHub Pages
 

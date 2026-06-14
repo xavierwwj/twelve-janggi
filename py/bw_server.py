@@ -264,6 +264,19 @@ class Handler(BaseHTTPRequestHandler):
                 advance(g)  # may resolve immediately if both have now locked
                 return self._send(view(g, body['game'], player))
 
+        if self.path == '/api/resign':
+            with LOCK:
+                g, player, err = authed(body)
+                if err:
+                    return self._send({'error': err}, 400)
+                touch(g, player)
+                if g['phase'] not in ('playing', 'reveal'):
+                    return self._send({'error': 'nothing to resign'}, 409)
+                g['state']['winner'] = 1 - player   # the opponent wins
+                g['state']['reason'] = 'resign'
+                g['phase'] = 'over'
+                return self._send(view(g, body['game'], player))
+
         if self.path == '/api/rematch':
             with LOCK:
                 g, player, err = authed(body)

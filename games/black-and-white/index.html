@@ -38,6 +38,8 @@
   .status.locked { color: #86efac; font-weight: 600; }
   #youPanel { border-color: #eab308; }
   #oppPanel { padding-right: 50px; }  /* clear the fixed ? button in the corner */
+  #resignBtn { font-size: 12px; font-weight: 600; padding: 5px 12px; border-radius: 999px; border: 1px solid #6b3a3a; background: transparent; color: #e09b9b; cursor: pointer; }
+  #resignBtn.hidden { display: none; }
 
   /* ---- center: round + timer / reveal ---- */
   #center {
@@ -173,6 +175,7 @@
       <span class="who" id="youName">You</span>
       <span class="status locked hidden" id="youStatus">locked in ✓</span>
       <span class="spacer"></span>
+      <button id="resignBtn">Resign</button>
       <span class="score" id="youScore">0</span>
     </div>
     <div id="handWrap">
@@ -321,6 +324,20 @@ async function poll() {
   }
 }
 
+// concede the current game — the opponent wins immediately
+async function resign() {
+  if (!session || !confirm('Resign this game? Your opponent wins.')) return;
+  try {
+    latest = await api('/api/resign', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(session),
+    });
+    render();
+  } catch (e) {
+    poll();
+  }
+}
+
 // rematch the SAME opponent — resets the current game, never re-matchmakes
 async function rematch() {
   if (!session) return;
@@ -403,6 +420,7 @@ function render() {
   $('youName').textContent = latest.your_name || 'You';
   $('youScore').textContent = latest.your_score;
   $('youStatus').classList.toggle('hidden', latest.you_locked === null);
+  $('resignBtn').classList.toggle('hidden', !(latest.phase === 'playing' || latest.phase === 'reveal'));
 
   renderCenter();
   renderHand();
@@ -518,7 +536,8 @@ function renderOver() {
   if (!over) return;
   const r = $('overResult');
   const map = { you: ['You win! 🎉', 'win'], opp: ['You lose', 'lose'], draw: ['Draw', 'draw'] };
-  const [text, cls] = map[latest.winner] || ['Game over', 'draw'];
+  let [text, cls] = map[latest.winner] || ['Game over', 'draw'];
+  if (latest.reason === 'resign') text = latest.winner === 'you' ? 'You win — opponent resigned' : 'You resigned';
   r.textContent = text; r.className = 'big-result ' + cls;
   $('overScore').textContent = `${latest.your_name || 'You'} ${latest.your_score} — ${latest.opp_score} ${latest.opp_name || 'Opponent'}`;
 
@@ -560,6 +579,7 @@ $('cancelBtn').addEventListener('click', () => clearSession());
 $('againBtn').addEventListener('click', rematch);
 $('leaveBtn').addEventListener('click', () => clearSession());
 $('leftBtn').addEventListener('click', () => clearSession());
+$('resignBtn').addEventListener('click', resign);
 $('rulesBtn').addEventListener('click', () => $('rulesModal').classList.remove('hidden'));
 $('closeRulesBtn').addEventListener('click', () => $('rulesModal').classList.add('hidden'));
 
