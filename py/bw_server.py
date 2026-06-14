@@ -30,6 +30,7 @@ import black_and_white as bw
 
 ROUND_SECONDS = 30
 REVEAL_SECONDS = 4
+DISCONNECT_SECONDS = 15   # clients poll ~1/s; this many seconds of silence = gone
 
 UI_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                        'games', 'black-and-white', 'index.html')
@@ -40,15 +41,36 @@ WAITING = None    # game_id with one player awaiting an opponent
 
 
 def new_game():
+    now = time.time()
     return {
         'state': bw.initial_state(),
         'tokens': [secrets.token_hex(8), None],
         'names': ['', ''],
-        'phase': 'waiting',     # waiting | playing | reveal | over
+        'client_ids': [None, None],     # persistent per-browser id, to spot self-joins
+        'last_seen': [now, 0.0],        # last time each player polled (heartbeat)
+        'phase': 'waiting',             # waiting | playing | reveal | over | abandoned
         'deadline': 0.0,
         'reveal_until': 0.0,
         'rematch': [False, False],
     }
+
+
+def alive(g, player):
+    return time.time() - g['last_seen'][player] < DISCONNECT_SECONDS
+
+
+def touch(g, player):
+    g['last_seen'][player] = time.time()
+
+
+def check_liveness(g):
+    """Cancel an active game whose opponent has gone silent. Caller holds LOCK."""
+    if g['phase'] in ('playing', 'reveal', 'over'):
+        for p in (0, 1):
+            if not alive(g, p):
+                g['phase'] = 'abandoned'
+                g['left'] = p
+                return
 
 
 def reset_for_rematch(g):
@@ -61,21 +83,30 @@ def reset_for_rematch(g):
     g['rematch'] = [False, False]
 
 
-def join(name):
+def join(name, client_id=None):
     global WAITING
     name = (name or 'Player').strip()[:16] or 'Player'
     if WAITING and WAITING in GAMES and GAMES[WAITING]['phase'] == 'waiting':
         g = GAMES[WAITING]
-        gid = WAITING
+        # only pair if the waiting creator is still here and isn't this same
+        # browser — otherwise we'd be matched against an abandoned game or self
+        same_browser = client_id is not None and g['client_ids'][0] == client_id
+        if alive(g, 0) and not same_browser:
+            gid = WAITING
+            WAITING = None
+            g['tokens'][1] = secrets.token_hex(8)
+            g['names'][1] = name
+            g['client_ids'][1] = client_id
+            g['last_seen'][1] = time.time()
+            g['phase'] = 'playing'
+            g['deadline'] = time.time() + ROUND_SECONDS
+            return {'game': gid, 'player': 1, 'token': g['tokens'][1]}
+        GAMES.pop(WAITING, None)  # discard the stale / own waiting game
         WAITING = None
-        g['tokens'][1] = secrets.token_hex(8)
-        g['names'][1] = name
-        g['phase'] = 'playing'
-        g['deadline'] = time.time() + ROUND_SECONDS
-        return {'game': gid, 'player': 1, 'token': g['tokens'][1]}
     gid = secrets.token_hex(6)
     g = new_game()
     g['names'][0] = name
+    g['client_ids'][0] = client_id
     GAMES[gid] = g
     WAITING = gid
     return {'game': gid, 'player': 0, 'token': g['tokens'][0]}
@@ -132,6 +163,7 @@ def view(g, gid, player):
         'round_seconds': ROUND_SECONDS,
         'rematch_me': g['rematch'][player],
         'rematch_opp': g['rematch'][opp],
+        'opp_left': g['phase'] == 'abandoned',
     }
     out.update(bw.observe(g['state'], player))
     return out
@@ -193,6 +225,8 @@ class Handler(BaseHTTPRequestHandler):
                 g, player, err = authed(query)
                 if err:
                     return self._send({'error': err}, 400)
+                touch(g, player)        # heartbeat
+                check_liveness(g)       # cancel if the opponent has gone silent
                 advance(g)
                 return self._send(view(g, query['game'], player))
         self.send_error(404)
@@ -206,13 +240,15 @@ class Handler(BaseHTTPRequestHandler):
 
         if self.path == '/api/join':
             with LOCK:
-                return self._send(join(body.get('name')))
+                return self._send(join(body.get('name'), body.get('client')))
 
         if self.path == '/api/lock':
             with LOCK:
                 g, player, err = authed(body)
                 if err:
                     return self._send({'error': err}, 400)
+                touch(g, player)
+                check_liveness(g)
                 advance(g)
                 if g['phase'] != 'playing':
                     return self._send({'error': 'not accepting moves'}, 409)
@@ -233,6 +269,8 @@ class Handler(BaseHTTPRequestHandler):
                 g, player, err = authed(body)
                 if err:
                     return self._send({'error': err}, 400)
+                touch(g, player)
+                check_liveness(g)
                 if g['phase'] != 'over':
                     return self._send({'error': 'game not over'}, 409)
                 g['rematch'][player] = True

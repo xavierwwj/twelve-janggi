@@ -218,6 +218,15 @@
   </div>
 </div>
 
+<!-- opponent left -->
+<div id="leftModal" class="modal hidden">
+  <div class="card">
+    <div class="big-result lose">Opponent left</div>
+    <div class="finalscore">The game was cancelled.</div>
+    <button class="btn" id="leftBtn">New game</button>
+  </div>
+</div>
+
 <!-- rules -->
 <div id="rulesModal" class="modal hidden">
   <div class="card" id="rulesCard">
@@ -239,6 +248,13 @@
 
 const $ = id => document.getElementById(id);
 const SESSION_KEY = 'bw-session';
+
+// a stable id for this browser, so the server can tell a self-join from a real opponent
+const CLIENT_ID = (() => {
+  let c = localStorage.getItem('bw-client');
+  if (!c) { c = Math.random().toString(36).slice(2) + Date.now().toString(36); localStorage.setItem('bw-client', c); }
+  return c;
+})();
 
 let session = null;     // {game, player, token}
 let latest = null;      // last /api/state response
@@ -275,7 +291,7 @@ async function findGame() {
   try {
     session = await api('/api/join', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name }),
+      body: JSON.stringify({ name, client: CLIENT_ID }),
     });
     localStorage.setItem(SESSION_KEY, JSON.stringify(session));
     selected = null; curRound = 0;
@@ -322,6 +338,8 @@ function clearSession(msg) {
   session = null; latest = null;
   localStorage.removeItem(SESSION_KEY);
   $('err').textContent = msg || '';
+  $('overModal').classList.add('hidden');
+  $('leftModal').classList.add('hidden');
   showScreen('join');
 }
 
@@ -359,6 +377,13 @@ function render() {
     $('waitHint').textContent = 'Share this page\'s address with a friend, or open it on another device and tap "Find a game".';
     return;
   }
+  if (latest.phase === 'abandoned') {
+    showScreen('game');
+    $('overModal').classList.add('hidden');
+    $('leftModal').classList.remove('hidden');
+    return;
+  }
+  $('leftModal').classList.add('hidden');
   showScreen('game');
 
   // reset selection when a new round begins
@@ -533,6 +558,7 @@ $('lockBtn').addEventListener('click', () => { if (selected !== null) lockTile(s
 $('cancelBtn').addEventListener('click', () => clearSession());
 $('againBtn').addEventListener('click', rematch);
 $('leaveBtn').addEventListener('click', () => clearSession());
+$('leftBtn').addEventListener('click', () => clearSession());
 $('rulesBtn').addEventListener('click', () => $('rulesModal').classList.remove('hidden'));
 $('closeRulesBtn').addEventListener('click', () => $('rulesModal').classList.add('hidden'));
 
