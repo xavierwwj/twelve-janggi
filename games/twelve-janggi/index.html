@@ -401,7 +401,7 @@ const ONLINE_KEY = 'twelve-janggi-online-v1';
 // set this to your deployed relay URL (like BW_URL in the root menu).
 const RELAY_URL = (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
   ? location.protocol + '//' + location.hostname + ':8944'
-  : '';
+  : 'https://game-relay-rpo1.onrender.com';
 
 let S = null;            // engine state + .mode, .ai_player, .level, .last
 let selected = null;     // {kind:'board', idx} | {kind:'hand', handIdx}
