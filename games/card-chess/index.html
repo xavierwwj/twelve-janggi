@@ -266,6 +266,30 @@
     #undoBtn { left: 54px; font-size: 12px; }
   }
 
+  /* ---- online view: seat-1 (black) sees the board from their side ---- */
+  #boardFrame.rot180 { transform: rotate(180deg); }
+  /* keep piece bodies upright on the rotated board; the facing arrows are
+     board state and must rotate with it */
+  .rot180 .piece svg > g:first-child {
+    transform: rotate(180deg);
+    transform-origin: 50% 50%;
+    transform-box: view-box;
+  }
+  #app.seat1 #bar0 { order: -1; }
+  #app.seat1 #bar1 { order: 1; }
+  .rot180 .piece svg.launched { animation-name: hoparcflip; }
+  @keyframes hoparcflip {
+    0%, 100% { transform: translateY(0) scale(1); }
+    50% { transform: translateY(60%) scale(1.3); }
+  }
+  #netStatus { font-size: 11px; color: #9a9da3; margin-left: 6px; max-width: 90px; }
+  #netCodeInput {
+    width: 100%; padding: 11px; margin: 10px 0; font-size: 16px; text-align: center;
+    letter-spacing: 4px; border-radius: 10px; border: 1px solid #55585d;
+    background: #17181c; color: #eee;
+  }
+  #netStatusTxt { min-height: 20px; font-size: 14px; color: #e0c040; margin-top: 10px; }
+
   /* ---- toast ---- */
   #toast {
     position: fixed;
@@ -427,6 +451,7 @@
   <div id="waitStrip">
     <div id="waitTile">WAIT</div>
     <div id="waitCardBox"></div>
+    <div id="netStatus"></div>
   </div>
 
   <div id="boardFrame">
@@ -458,6 +483,7 @@
     <button class="menu-btn" id="btnPvp">👥 &nbsp;2 Players</button>
     <button class="menu-btn alt" id="btnAiWhite">🤖 &nbsp;vs AI — you play White</button>
     <button class="menu-btn alt" id="btnAiBlack">🤖 &nbsp;vs AI — you play Black &amp; draft</button>
+    <button class="menu-btn alt" id="btnOnline">🌐 &nbsp;Online — 2 players</button>
     <div class="seg" id="levelSeg">
       <span>AI level</span>
       <button data-level="easy">Easy</button>
@@ -476,6 +502,21 @@
     <div id="draftRow"></div>
     <div id="draftMsg"></div>
     <button class="menu-btn" id="draftConfirm" disabled>Start game</button>
+  </div>
+</div>
+
+<div id="onlineModal" class="modal hidden">
+  <div class="card" id="onlineCard" style="text-align:center">
+    <h2 style="margin:0 0 4px">🌐 Online</h2>
+    <div class="sub" style="color:#b9bcc2;font-size:13px;margin-bottom:12px">
+      Play against a friend on another device. Colours are dealt randomly;
+      Black drafts the cards, White moves first.</div>
+    <button class="menu-btn" id="netQuickBtn">⚡ &nbsp;Quick match</button>
+    <button class="menu-btn alt" id="netCreateBtn">➕ &nbsp;Create room (get a code)</button>
+    <input id="netCodeInput" inputmode="numeric" maxlength="4" placeholder="····  room code">
+    <button class="menu-btn alt" id="netJoinBtn">🔑 &nbsp;Join with code</button>
+    <div id="netStatusTxt"></div>
+    <button id="netBackBtn" style="margin-top:12px;background:none;border:none;color:#b9bcc2;font-size:14px;cursor:pointer;text-decoration:underline">back to menu</button>
   </div>
 </div>
 
@@ -512,6 +553,7 @@
 <!-- bump ?v= when these files change so browsers drop their cached copies -->
 <script src="../../core/engine.js?v=1"></script>
 <script src="../../core/negamax.js?v=1"></script>
+<script src="../../core/online.js?v=1"></script>
 <script src="engine.js?v=1"></script>
 <script>
 'use strict';
@@ -549,6 +591,14 @@ const LEVELS = {
 
 const $ = id => document.getElementById(id);
 const SAVE_KEY = 'card-chess-v1';
+const ONLINE_KEY = 'card-chess-online-v1';
+
+// Online play talks to py/relay_server.py through core/online.js. On
+// localhost we assume the relay runs on port 8944; for the hosted site,
+// set this to your deployed relay URL (like BW_URL in the root menu).
+const RELAY_URL = (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
+  ? location.protocol + '//' + location.hostname + ':8944'
+  : '';
 
 let S = null;            // engine state + .mode, .ai_player, .level, .last, .lastFlip
 let selCard = null;      // one of the current player's two card names
@@ -558,6 +608,9 @@ let level = 'normal';
 let lastConfig = null;   // {mode, human} for "play again"
 let history = [];        // snapshots taken before each applied move
 let draftCtx = null;     // {mode, human, assign: {card: 'b'|'w'|'wait'|null}, locked}
+let net = null;          // OnlineSession while in (or joining) an online game
+let netPending = false;  // our move is on the wire, awaiting its echo
+let netFirstPoll = true;
 
 function snapshot() {
   const c = G.cloneState(S);
@@ -570,6 +623,7 @@ function snapshot() {
 }
 
 function save() {
+  if (S && S.mode === 'online') return;  // rebuilt from the relay's event log
   try { localStorage.setItem(SAVE_KEY, JSON.stringify({ S, level, lastConfig, history })); }
   catch (e) { /* storage unavailable (private mode etc.) — play on without saving */ }
 }
@@ -594,13 +648,18 @@ function restore() {
 
 function startGame(mode, human, draft) {
   if (thinking) return;
+  if (net && mode !== 'online') { net.leave(); net = null; }  // abandon any online room
   S = G.initialState(0, draft);
-  S.mode = mode;                                  // 'pvp' | 'ai'
+  S.mode = mode;                                  // 'pvp' | 'ai' | 'online'
   S.ai_player = mode === 'ai' ? 1 - human : null; // AI takes the other colour
+  S.my_seat = mode === 'online' ? human : null;   // my colour in an online game
   S.level = level;
   S.last = [];
   S.lastFlip = null;
-  lastConfig = { mode, human };
+  lastConfig = mode === 'online' ? null : { mode, human };
+  $('app').classList.toggle('seat1', mode === 'online' && human === 1);
+  $('boardFrame').classList.toggle('rot180', mode === 'online' && human === 1);
+  $('onlineModal').classList.add('hidden');
   history = [];
   selCard = selPiece = null;
   $('menu').classList.add('hidden');
@@ -649,6 +708,20 @@ function maybeAI() {
 }
 
 function playMove(mv) {
+  if (S.mode === 'online') {
+    // nothing is applied locally: the move comes back through the event
+    // log, so both players' games advance in exactly the same order
+    if (netPending || !net) return;
+    netPending = true;
+    selCard = selPiece = null;
+    net.send({ type: 'move', mv }).catch(() => {
+      netPending = false;
+      toast('Could not reach the server — try again');
+      render();
+    });
+    render();
+    return;
+  }
   commitMove(mv);
   selCard = selPiece = null;
   render();
@@ -659,7 +732,7 @@ function playMove(mv) {
 /* Undo one ply in PvP; in vs-AI, rewind to the last position where it was
    the human's turn (i.e. takes back the AI's reply and your move). */
 function canUndo() {
-  if (!S || thinking || !history.length) return false;
+  if (!S || thinking || !history.length || S.mode === 'online') return false;
   if (S.mode === 'ai') return history.some(h => h.turn !== S.ai_player);
   return true;
 }
@@ -693,7 +766,7 @@ function openDraft(mode, human, aiAssign) {
   for (const c of G.CARDS) draftCtx.assign[c] = null;
   if (aiAssign) Object.assign(draftCtx.assign, aiAssign);
   $('draftTitle').textContent = aiAssign ? 'The AI drafted the cards'
-    : (mode === 'ai' ? 'You draft the cards (Black)' : 'Black drafts the cards');
+    : (mode === 'pvp' ? 'Black drafts the cards' : 'You draft the cards (Black)');
   $('draftSub').textContent = aiAssign
     ? 'Black keeps 2, you get 2, 1 waits. You are White — you move first.'
     : 'Tap each card to cycle: Black · White · Wait. Black keeps 2, White gets 2, 1 waits. White moves first.';
@@ -746,6 +819,13 @@ function confirmDraft() {
     else if (z === 'b') cards[1].push(c);
     else waitCard = c;
   }
+  if (draftCtx.mode === 'online') {
+    // the game starts for both players when the draft echoes back
+    net.send({ type: 'draft', draft: { cards, waitCard } })
+      .catch(() => toast('Could not reach the server — try again'));
+    $('draftModal').classList.add('hidden');
+    return;
+  }
   startGame(draftCtx.mode, draftCtx.human, { cards, waitCard });
 }
 
@@ -764,11 +844,96 @@ function aiDraftAndStart() {
   }, 80);
 }
 
+/* ---------- online play (relay client; see core/online.js) ---------- */
+
+function netStatusTxt(msg) {
+  $('netStatusTxt').textContent = msg || '';
+  $('netStatus').textContent = (S && S.mode === 'online' && msg) ? '🌐 ' + msg : '';
+}
+
+function beginOnlineSetup(seat) {
+  // seats are dealt: black (seat 1) drafts, white waits for the draft event
+  if (S && S.mode === 'online') return;               // resumed mid-game
+  if (draftCtx && draftCtx.mode === 'online') return; // draft already open
+  if (seat === 1) {
+    $('onlineModal').classList.add('hidden');
+    openDraft('online', 1);
+  } else {
+    $('onlineModal').classList.remove('hidden');
+    netStatusTxt('Matched! Black is drafting the cards…');
+  }
+}
+
+function onNetEvents(evs) {
+  for (let i = 0; i < evs.length; i++) {
+    const p = evs[i].payload;
+    if (p.type === 'draft') {
+      startGame('online', net.seat, p.draft);
+    } else if (p.type === 'move' && S && S.mode === 'online' && S.winner === null) {
+      commitMove(p.mv);
+      if (i < evs.length - 1) animateMove = null;  // replaying: animate the newest only
+      netPending = false;
+    }
+  }
+  render();
+  if (S && S.mode === 'online' && S.winner !== null && net) {
+    net.leave();  // the room is done; a reload should not try to resume it
+  }
+}
+
+function wireNet() {
+  netFirstPoll = true;
+  net.start({
+    onMatched: seat => beginOnlineSetup(seat),
+    onEvents: onNetEvents,
+    onStatus: txt => {
+      if (txt.startsWith('error')) {
+        // room expired or bad token — drop the session and surface the menu
+        net.leave(); net = null;
+        netStatusTxt('');
+        toast('Online game is no longer available');
+        $('onlineModal').classList.add('hidden');
+        if (!S || S.mode === 'online') { S = null; $('menu').classList.remove('hidden'); }
+        return;
+      }
+      if (netFirstPoll) {
+        netFirstPoll = false;
+        // resumed a room that is matched but has no game yet (draft pending)
+        if (net.seat !== null && (!S || S.mode !== 'online')) beginOnlineSetup(net.seat);
+      }
+      if (txt === 'waiting') {
+        netStatusTxt(net.code ? `Room code: ${net.code} — waiting for a friend…`
+                              : 'Waiting for an opponent…');
+      } else if (S && S.mode === 'online' && S.winner === null) {
+        netStatusTxt(txt === 'connected' ? '' : txt);
+      }
+    },
+  });
+}
+
+async function netBegin(kind, code) {
+  if (!RELAY_URL) return;
+  if (net) { net.leave(); net = null; }
+  try {
+    net = new OnlineSession(RELAY_URL, 'card-chess', ONLINE_KEY);
+    netStatusTxt('Connecting…');
+    const d = kind === 'quick' ? await net.quick()
+            : kind === 'create' ? await net.create()
+            : await net.join(code);
+    wireNet();
+    if (d.status === 'playing') beginOnlineSetup(net.seat);
+  } catch (e) {
+    netStatusTxt(String(e.message || e));
+    if (net) { net.leave(); net = null; }
+  }
+}
+
 /* ---------- interaction ---------- */
 
 function locked() {
   return thinking || !S || S.winner !== null
-      || (S.mode === 'ai' && S.turn === S.ai_player);
+      || (S.mode === 'ai' && S.turn === S.ai_player)
+      || (S.mode === 'online' && (S.turn !== S.my_seat || netPending));
 }
 
 function onCard(player, card) {
@@ -983,20 +1148,25 @@ function render() {
   }
 
   const isAi = S.mode === 'ai';
+  const isNet = S.mode === 'online';
   const aiP = S.ai_player;
-  $('bar1').classList.toggle('flipped', !isAi);
-  $('chip0').textContent = isAi && aiP === 0 ? '🤖 AI · ⚪ White' : '⚪ White';
-  $('chip1').textContent = isAi && aiP === 1 ? '🤖 AI · ⚫ Black' : '⚫ Black';
+  $('bar1').classList.toggle('flipped', S.mode === 'pvp');
+  $('chip0').textContent = isAi && aiP === 0 ? '🤖 AI · ⚪ White'
+    : isNet ? (S.my_seat === 0 ? '⚪ White (you)' : '⚪ White (them)') : '⚪ White';
+  $('chip1').textContent = isAi && aiP === 1 ? '🤖 AI · ⚫ Black'
+    : isNet ? (S.my_seat === 1 ? '⚫ Black (you)' : '⚫ Black (them)') : '⚫ Black';
   for (const player of [0, 1]) {
-    const mine = !isAi || player !== aiP;
+    const mine = isNet ? player === S.my_seat : (!isAi || player !== aiP);
     $('tag' + player).textContent =
-      mine ? '▶ your turn' : (thinking ? '🤔 thinking…' : '▶ AI turn');
+      mine ? (isNet && netPending ? '📡 sending…' : '▶ your turn')
+           : isNet ? '▶ opponent…' : (thinking ? '🤔 thinking…' : '▶ AI turn');
     $('bar' + player).classList.toggle('active', S.winner === null && S.turn === player);
     const box = $('handCards' + player);
     box.innerHTML = '';
     for (const card of S.cards[player]) {
       const el = cardEl(card, 'm');
-      if (S.winner === null && S.turn === player && mine && !thinking) {
+      if (S.winner === null && S.turn === player && mine && !thinking
+          && !(isNet && netPending)) {
         if (selCard === card) el.classList.add('selected');
         el.addEventListener('click', () => onCard(player, card));
       } else {
@@ -1023,6 +1193,7 @@ function render() {
                                       : 'Draw — stalemate: no legal move';
     } else {
       const name = isAi ? (S.winner === aiP ? '🤖 AI' : 'You')
+                 : isNet ? (S.winner === S.my_seat ? 'You' : 'Opponent')
                         : (S.winner === 0 ? '⚪ White' : '⚫ Black');
       msg = `${name === 'You' ? 'You win' : name + ' wins'} — captured every enemy piece!`;
     }
@@ -1032,7 +1203,7 @@ function render() {
       el.classList.remove('w0', 'w1', 'w2');
       el.classList.add('w' + S.winner);
     }
-    $('winMsgTop').classList.toggle('hidden', isAi);
+    $('winMsgTop').classList.toggle('hidden', isAi || isNet);
     overlay.classList.remove('hidden');
   } else {
     overlay.classList.add('hidden');
@@ -1042,6 +1213,24 @@ function render() {
 /* ---------- wiring ---------- */
 
 $('btnPvp').addEventListener('click', () => openDraft('pvp', 0));
+$('btnOnline').addEventListener('click', () => {
+  if (!RELAY_URL) { toast('Online needs the relay server — see the README'); return; }
+  $('menu').classList.add('hidden');
+  netStatusTxt('');
+  $('onlineModal').classList.remove('hidden');
+});
+$('netQuickBtn').addEventListener('click', () => netBegin('quick'));
+$('netCreateBtn').addEventListener('click', () => netBegin('create'));
+$('netJoinBtn').addEventListener('click', () => {
+  const code = $('netCodeInput').value.trim();
+  if (code.length === 4) netBegin('join', code);
+  else netStatusTxt('Enter the 4-digit room code');
+});
+$('netBackBtn').addEventListener('click', () => {
+  if (net) { net.leave(); net = null; }
+  $('onlineModal').classList.add('hidden');
+  $('menu').classList.remove('hidden');
+});
 $('btnAiWhite').addEventListener('click', aiDraftAndStart);
 $('btnAiBlack').addEventListener('click', () => openDraft('ai', 1));
 $('draftConfirm').addEventListener('click', confirmDraft);
@@ -1114,8 +1303,15 @@ function buildRules() {
 }
 buildRules();
 
-// restore a saved game (if any) behind the menu; offer resume if it's still live
-if (restore()) {
+// an unfinished online game resumes by replaying the relay's event log;
+// otherwise restore a saved local game (if any) behind the menu
+const savedNet = RELAY_URL && OnlineSession.saved(RELAY_URL, 'card-chess', ONLINE_KEY);
+if (savedNet) {
+  net = savedNet;
+  $('menu').classList.add('hidden');
+  toast('Reconnecting to your online game…');
+  wireNet();
+} else if (restore()) {
   $('resumeBtn').classList.toggle('hidden', S.winner !== null);
   render();
   maybeAI();  // in case the page closed mid-"thinking"

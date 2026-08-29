@@ -36,6 +36,22 @@ The red dots on each tile show its move directions.
   2. Move your own 王 into the opponent's territory and survive your opponent's next move.
   3. Your opponent has no legal move (house rule; practically unreachable).
 
+## Online 2-player
+
+Both Twelve Janggi and Card Chess also have an **Online** mode: quick-match a
+stranger or share a 4-digit room code with a friend. It runs on a tiny generic
+relay (`py/relay_server.py`, stdlib only) that knows no game rules — both
+browsers run the same engine and exchange moves through an ordered event log
+(which is also how a reload reconnects mid-game). The client side is the
+shared `core/online.js`, so any future engine-API game gets online play for
+free.
+
+- Local: `python3 py/relay_server.py` (port 8944 — the game pages use it
+  automatically on localhost).
+- Hosted: deploy via `render.yaml` (service `game-relay`), then paste the
+  service URL into `RELAY_URL` in `games/twelve-janggi/index.html` and
+  `games/card-chess/index.html`.
+
 ---
 
 # Card Chess 카드 체스

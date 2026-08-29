@@ -1,6 +1,9 @@
-# Render blueprint for the Black and White game server (free tier).
+# Render blueprint for the game servers (free tier).
 # Deploy: in the Render dashboard, New + → Blueprint → connect this repo.
-# Render injects $PORT, which py/bw_server.py reads.
+# Render injects $PORT, which both servers read.
+#
+# game-relay powers the Online mode of Twelve Janggi and Card Chess: after
+# deploying, paste its URL into RELAY_URL in games/*/index.html.
 services:
   - type: web
     name: black-and-white
@@ -8,4 +11,11 @@ services:
     plan: free
     buildCommand: pip install -r requirements.txt
     startCommand: python3 py/bw_server.py
+    autoDeploy: true
+  - type: web
+    name: game-relay
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python3 py/relay_server.py
     autoDeploy: true

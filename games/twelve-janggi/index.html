@@ -146,6 +146,18 @@
   .hand-piece.p1 { border: 2.5px solid #991b1b; }
   .hand-piece.selected { outline: 3px solid #eab308; outline-offset: 1px; }
 
+  /* ---- online view: seat-1 (Red) sees the board from their side ---- */
+  #board.rot180 { transform: rotate(180deg); }
+  #app.seat1 #bar0 { order: -1; }
+  #app.seat1 #bar1 { order: 1; }
+  #netStatus { font-size: 11px; color: #c8b8a8; }
+  #netCodeInput {
+    width: 100%; padding: 11px; margin: 10px 0; font-size: 16px; text-align: center;
+    letter-spacing: 4px; border-radius: 10px; border: 1px solid #57493f;
+    background: #241a14; color: #eee;
+  }
+  #netStatusTxt { min-height: 20px; font-size: 14px; color: #eab308; margin-top: 10px; }
+
   /* ---- corner buttons ---- */
   .corner-btn {
     position: fixed;
@@ -278,6 +290,7 @@
   </div>
 
   <div id="board"></div>
+  <div id="netStatus"></div>
 
   <div class="hand-bar" id="bar0">
     <span class="player-chip c0" id="chip0">초 Green</span>
@@ -297,6 +310,7 @@
     <button class="menu-btn" id="btnPvp">👥 &nbsp;2 Players</button>
     <button class="menu-btn alt" id="btnAiYou">🤖 &nbsp;vs AI — you move first</button>
     <button class="menu-btn alt" id="btnAiFirst">🤖 &nbsp;vs AI — AI moves first</button>
+    <button class="menu-btn alt" id="btnOnline">🌐 &nbsp;Online — 2 players</button>
     <div class="seg" id="levelSeg">
       <span>AI level</span>
       <button data-level="easy">Easy</button>
@@ -305,6 +319,21 @@
     </div>
     <button class="menu-btn alt" id="btnRules">📖 &nbsp;Rules</button>
     <button id="resumeBtn" class="hidden">resume game</button>
+  </div>
+</div>
+
+<div id="onlineModal" class="modal hidden">
+  <div class="card" style="text-align:center">
+    <h2 style="margin:0 0 4px">🌐 Online</h2>
+    <div style="color:#c8b8a8;font-size:13px;margin-bottom:12px">
+      Play against a friend on another device. Colours are dealt randomly;
+      초 Green moves first.</div>
+    <button class="menu-btn" id="netQuickBtn">⚡ &nbsp;Quick match</button>
+    <button class="menu-btn alt" id="netCreateBtn">➕ &nbsp;Create room (get a code)</button>
+    <input id="netCodeInput" inputmode="numeric" maxlength="4" placeholder="····  room code">
+    <button class="menu-btn alt" id="netJoinBtn">🔑 &nbsp;Join with code</button>
+    <div id="netStatusTxt"></div>
+    <button id="netBackBtn" style="margin-top:12px;background:none;border:none;color:#c8b8a8;font-size:14px;cursor:pointer;text-decoration:underline">back to menu</button>
   </div>
 </div>
 
@@ -340,6 +369,7 @@
 <!-- bump ?v= when these files change so browsers drop their cached copies -->
 <script src="../../core/engine.js?v=3"></script>
 <script src="../../core/negamax.js?v=3"></script>
+<script src="../../core/online.js?v=1"></script>
 <script src="engine.js?v=3"></script>
 <script>
 'use strict';
@@ -364,6 +394,14 @@ const LEVELS = {
 
 const $ = id => document.getElementById(id);
 const SAVE_KEY = 'twelve-janggi-v1';
+const ONLINE_KEY = 'twelve-janggi-online-v1';
+
+// Online play talks to py/relay_server.py through core/online.js. On
+// localhost we assume the relay runs on port 8944; for the hosted site,
+// set this to your deployed relay URL (like BW_URL in the root menu).
+const RELAY_URL = (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
+  ? location.protocol + '//' + location.hostname + ':8944'
+  : '';
 
 let S = null;            // engine state + .mode, .ai_player, .level, .last
 let selected = null;     // {kind:'board', idx} | {kind:'hand', handIdx}
@@ -371,6 +409,9 @@ let thinking = false;    // AI is computing
 let level = 'normal';
 let lastConfig = null;   // {mode, first} for "play again"
 let history = [];        // snapshots taken before each applied move
+let net = null;          // OnlineSession while in (or joining) an online game
+let netPending = false;  // our move is on the wire, awaiting its echo
+let netFirstPoll = true;
 
 function snapshot() {
   const c = G.cloneState(S);
@@ -382,6 +423,7 @@ function snapshot() {
 }
 
 function save() {
+  if (S && S.mode === 'online') return;  // rebuilt from the relay's event log
   try { localStorage.setItem(SAVE_KEY, JSON.stringify({ S, level, lastConfig, history })); }
   catch (e) { /* storage unavailable (private mode etc.) — play on without saving */ }
 }
@@ -402,14 +444,19 @@ function restore() {
   return false;
 }
 
-function startGame(mode, first) {
+function startGame(mode, first, mySeat) {
   if (thinking) return;
+  if (net && mode !== 'online') { net.leave(); net = null; }  // abandon any online room
   S = G.initialState(first);
-  S.mode = mode;
+  S.mode = mode;                       // 'pvp' | 'ai' | 'online'
   S.ai_player = mode === 'ai' ? 1 : null;
+  S.my_seat = mode === 'online' ? mySeat : null;
   S.level = level;
   S.last = [];
-  lastConfig = { mode, first };
+  lastConfig = mode === 'online' ? null : { mode, first };
+  $('app').classList.toggle('seat1', mode === 'online' && mySeat === 1);
+  $('board').classList.toggle('rot180', mode === 'online' && mySeat === 1);
+  $('onlineModal').classList.add('hidden');
   history = [];
   selected = null;
   $('menu').classList.add('hidden');
@@ -437,6 +484,19 @@ function maybeAI() {
 }
 
 function playMove(mv) {
+  if (S.mode === 'online') {
+    // nothing is applied locally: the move comes back through the event
+    // log, so both players' games advance in exactly the same order
+    if (netPending || !net) return;
+    netPending = true;
+    selected = null;
+    net.send({ type: 'move', mv }).catch(() => {
+      netPending = false;
+      render();
+    });
+    render();
+    return;
+  }
   history.push(snapshot());
   G.applyMove(S, mv);
   S.last = mv.drop ? [mv.to] : [mv.from, mv.to];
@@ -446,10 +506,78 @@ function playMove(mv) {
   maybeAI();
 }
 
+/* ---------- online play (relay client; see core/online.js) ---------- */
+
+function netStatusTxt(msg) {
+  $('netStatusTxt').textContent = msg || '';
+  $('netStatus').textContent = (S && S.mode === 'online' && msg) ? '🌐 ' + msg : '';
+}
+
+function applyNetMove(mv) {
+  G.applyMove(S, mv);
+  S.last = mv.drop ? [mv.to] : [mv.from, mv.to];
+  netPending = false;
+}
+
+function onNetEvents(evs) {
+  if (!S || S.mode !== 'online') startGame('online', 0, net.seat);
+  for (const ev of evs) {
+    if (ev.payload.type === 'move' && S.winner === null) applyNetMove(ev.payload.mv);
+  }
+  render();
+  if (S.winner !== null && net) {
+    net.leave();  // the room is done; a reload should not try to resume it
+  }
+}
+
+function wireNet() {
+  netFirstPoll = true;
+  net.start({
+    onMatched: seat => startGame('online', 0, seat),
+    onEvents: onNetEvents,
+    onStatus: txt => {
+      if (txt.startsWith('error')) {
+        net.leave(); net = null;
+        netStatusTxt('');
+        $('onlineModal').classList.add('hidden');
+        if (!S || S.mode === 'online') { S = null; $('menu').classList.remove('hidden'); }
+        return;
+      }
+      if (netFirstPoll) {
+        netFirstPoll = false;
+        if (net.seat !== null && (!S || S.mode !== 'online')) startGame('online', 0, net.seat);
+      }
+      if (txt === 'waiting') {
+        netStatusTxt(net.code ? `Room code: ${net.code} — waiting for a friend…`
+                              : 'Waiting for an opponent…');
+      } else if (S && S.mode === 'online' && S.winner === null) {
+        netStatusTxt(txt === 'connected' ? '' : txt);
+      }
+    },
+  });
+}
+
+async function netBegin(kind, code) {
+  if (!RELAY_URL) return;
+  if (net) { net.leave(); net = null; }
+  try {
+    net = new OnlineSession(RELAY_URL, 'twelve-janggi', ONLINE_KEY);
+    netStatusTxt('Connecting…');
+    const d = kind === 'quick' ? await net.quick()
+            : kind === 'create' ? await net.create()
+            : await net.join(code);
+    wireNet();
+    if (d.status === 'playing') startGame('online', 0, net.seat);
+  } catch (e) {
+    netStatusTxt(String(e.message || e));
+    if (net) { net.leave(); net = null; }
+  }
+}
+
 /* Undo one ply in PvP; in vs-AI, rewind to the last position where it was
    the human's turn (i.e. takes back the AI's reply and your move). */
 function canUndo() {
-  if (!S || thinking || !history.length) return false;
+  if (!S || thinking || !history.length || S.mode === 'online') return false;
   if (S.mode === 'ai') return history.some(h => h.turn !== S.ai_player);
   return true;
 }
@@ -471,7 +599,8 @@ function undo() {
 
 function locked() {
   return thinking || !S || S.winner !== null
-      || (S.mode === 'ai' && S.turn === S.ai_player);
+      || (S.mode === 'ai' && S.turn === S.ai_player)
+      || (S.mode === 'online' && (S.turn !== S.my_seat || netPending));
 }
 
 function onCell(i) {
@@ -554,10 +683,17 @@ function render() {
   }
 
   const isAi = S.mode === 'ai';
-  $('bar1').classList.toggle('flipped', !isAi);
-  $('chip1').textContent = isAi ? '🤖 AI · 홍 Red' : '홍 Red';
-  $('tag0').textContent = '▶ your turn';
-  $('tag1').textContent = isAi ? (thinking ? '🤔 thinking…' : '▶ AI turn') : '▶ your turn';
+  const isNet = S.mode === 'online';
+  $('bar1').classList.toggle('flipped', S.mode === 'pvp');
+  $('chip0').textContent = isNet ? (S.my_seat === 0 ? '초 Green (you)' : '초 Green (them)') : '초 Green';
+  $('chip1').textContent = isAi ? '🤖 AI · 홍 Red'
+    : isNet ? (S.my_seat === 1 ? '홍 Red (you)' : '홍 Red (them)') : '홍 Red';
+  for (const p of [0, 1]) {
+    const mine = !isNet || p === S.my_seat;
+    $('tag' + p).textContent =
+      isNet ? (mine ? (netPending ? '📡 sending…' : '▶ your turn') : '▶ opponent…')
+            : (p === 1 && isAi ? (thinking ? '🤔 thinking…' : '▶ AI turn') : '▶ your turn');
+  }
 
   for (const player of [0, 1]) {
     $('bar' + player).classList.toggle('active', S.winner === null && S.turn === player);
@@ -578,20 +714,21 @@ function render() {
   const overlay = $('overlay');
   if (S.winner !== null) {
     $('undoBtn2').classList.toggle('hidden', !canUndo());
-    const name = S.winner === 0 ? '초 Green' : (isAi ? '🤖 AI (Red)' : '홍 Red');
+    const name = isNet ? (S.winner === S.my_seat ? 'You' : 'Opponent')
+               : S.winner === 0 ? '초 Green' : (isAi ? '🤖 AI (Red)' : '홍 Red');
     const why = {
       capture: 'captured the King!',
       reach: 'the King reached enemy territory!',
       stuck: 'opponent has no legal move!',
     }[S.reason] || '';
-    const msg = `${name} wins — ${why}`;
+    const msg = `${name === 'You' ? 'You win' : name + ' wins'} — ${why}`;
     for (const id of ['winMsgTop', 'winMsgBottom']) {
       const el = $(id);
       el.textContent = msg;
       el.classList.remove('w0', 'w1');
       el.classList.add('w' + S.winner);
     }
-    $('winMsgTop').classList.toggle('hidden', isAi);
+    $('winMsgTop').classList.toggle('hidden', isAi || isNet);
     overlay.classList.remove('hidden');
   } else {
     overlay.classList.add('hidden');
@@ -601,6 +738,24 @@ function render() {
 /* ---------- wiring ---------- */
 
 $('btnPvp').addEventListener('click', () => startGame('pvp', 0));
+$('btnOnline').addEventListener('click', () => {
+  if (!RELAY_URL) return;
+  $('menu').classList.add('hidden');
+  netStatusTxt('');
+  $('onlineModal').classList.remove('hidden');
+});
+$('netQuickBtn').addEventListener('click', () => netBegin('quick'));
+$('netCreateBtn').addEventListener('click', () => netBegin('create'));
+$('netJoinBtn').addEventListener('click', () => {
+  const code = $('netCodeInput').value.trim();
+  if (code.length === 4) netBegin('join', code);
+  else netStatusTxt('Enter the 4-digit room code');
+});
+$('netBackBtn').addEventListener('click', () => {
+  if (net) { net.leave(); net = null; }
+  $('onlineModal').classList.add('hidden');
+  $('menu').classList.remove('hidden');
+});
 $('btnAiYou').addEventListener('click', () => startGame('ai', 0));
 $('btnAiFirst').addEventListener('click', () => startGame('ai', 1));
 $('levelSeg').addEventListener('click', e => {
@@ -660,8 +815,14 @@ function buildRules() {
 }
 buildRules();
 
-// restore a saved game (if any) behind the menu; offer resume if it's still live
-if (restore()) {
+// an unfinished online game resumes by replaying the relay's event log;
+// otherwise restore a saved local game (if any) behind the menu
+const savedNet = RELAY_URL && OnlineSession.saved(RELAY_URL, 'twelve-janggi', ONLINE_KEY);
+if (savedNet) {
+  net = savedNet;
+  $('menu').classList.add('hidden');
+  wireNet();
+} else if (restore()) {
   $('resumeBtn').classList.toggle('hidden', S.winner !== null);
   render();
   maybeAI();  // in case the page closed mid-"thinking"
