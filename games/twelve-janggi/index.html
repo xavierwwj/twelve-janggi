@@ -182,6 +182,7 @@
     letter-spacing: 1px;
   }
   #rulesBtn { right: 12px; }
+  #resignBtn { right: 60px; }
   .corner-btn:disabled { opacity: .35; cursor: default; }
 
   /* ---- modals ---- */
@@ -301,6 +302,7 @@
 
 <button class="corner-btn" id="menuBtn" title="New game / mode">↺</button>
 <button class="corner-btn" id="undoBtn" title="Undo move">UNDO</button>
+<button class="corner-btn" id="resignBtn" title="End game (resign)">🏳</button>
 <button class="corner-btn" id="rulesBtn" title="Rules">?</button>
 
 <div id="menu" class="modal">
@@ -506,6 +508,25 @@ function playMove(mv) {
   maybeAI();
 }
 
+/* Ends the game in any mode: you concede (in hot-seat, the player to move
+   does). Online it travels the event log so the opponent sees it too. */
+function resign() {
+  if (!S || S.winner !== null || thinking) return;
+  if (S.mode === 'online') {
+    if (!net || !confirm('Resign this game?')) return;
+    net.send({ type: 'resign' });
+    return;
+  }
+  const loser = S.mode === 'ai' ? 0 : S.turn;
+  if (!confirm(S.mode === 'pvp' ? 'End the game? The player to move concedes.'
+                                : 'Resign this game?')) return;
+  S.winner = 1 - loser;
+  S.reason = 'resign';
+  selected = null;
+  render();
+  save();
+}
+
 /* ---------- online play (relay client; see core/online.js) ---------- */
 
 function netStatusTxt(msg) {
@@ -523,6 +544,10 @@ function onNetEvents(evs) {
   if (!S || S.mode !== 'online') startGame('online', 0, net.seat);
   for (const ev of evs) {
     if (ev.payload.type === 'move' && S.winner === null) applyNetMove(ev.payload.mv);
+    else if (ev.payload.type === 'resign' && S.winner === null) {
+      S.winner = 1 - ev.seat;
+      S.reason = 'resign';
+    }
   }
   render();
   if (S.winner !== null && net) {
@@ -710,6 +735,7 @@ function render() {
   }
 
   $('undoBtn').disabled = !canUndo();
+  $('resignBtn').disabled = !S || S.winner !== null || thinking;
 
   const overlay = $('overlay');
   if (S.winner !== null) {
@@ -720,6 +746,7 @@ function render() {
       capture: 'captured the King!',
       reach: 'the King reached enemy territory!',
       stuck: 'opponent has no legal move!',
+      resign: 'by resignation!',
     }[S.reason] || '';
     const msg = `${name === 'You' ? 'You win' : name + ' wins'} — ${why}`;
     for (const id of ['winMsgTop', 'winMsgBottom']) {
@@ -766,6 +793,7 @@ $('levelSeg').addEventListener('click', e => {
   save();
 });
 $('undoBtn').addEventListener('click', undo);
+$('resignBtn').addEventListener('click', resign);
 $('undoBtn2').addEventListener('click', undo);
 $('resumeBtn').addEventListener('click', () => $('menu').classList.add('hidden'));
 $('menuBtn').addEventListener('click', () => {

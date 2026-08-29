@@ -251,6 +251,7 @@
     letter-spacing: 1px;
   }
   #rulesBtn { right: 12px; }
+  #resignBtn { right: 60px; }
   .corner-btn:disabled { opacity: .35; cursor: default; }
 
   /* compact layout for short phones (e.g. iPhone SE) so the fixed corner
@@ -264,6 +265,7 @@
     #boardFrame { width: min(92vw, calc(100dvh - 410px), 430px); padding: 24px 8px; }
     .corner-btn { width: 36px; height: 36px; font-size: 15px; bottom: 8px; }
     #undoBtn { left: 54px; font-size: 12px; }
+    #resignBtn { right: 52px; }
   }
 
   /* ---- online view: seat-1 (black) sees the board from their side ---- */
@@ -472,6 +474,7 @@
 
 <button class="corner-btn" id="menuBtn" title="New game / mode">↺</button>
 <button class="corner-btn" id="undoBtn" title="Undo move">UNDO</button>
+<button class="corner-btn" id="resignBtn" title="End game (resign)">🏳</button>
 <button class="corner-btn" id="rulesBtn" title="Rules">?</button>
 
 <div id="toast" class="hidden"></div>
@@ -844,6 +847,25 @@ function aiDraftAndStart() {
   }, 80);
 }
 
+/* Ends the game in any mode: you concede (in hot-seat, the player to move
+   does). Online it travels the event log so the opponent sees it too. */
+function resign() {
+  if (!S || S.winner !== null || thinking) return;
+  if (S.mode === 'online') {
+    if (!net || !confirm('Resign this game?')) return;
+    net.send({ type: 'resign' }).catch(() => toast('Could not reach the server — try again'));
+    return;
+  }
+  const loser = S.mode === 'ai' ? 1 - S.ai_player : S.turn;
+  if (!confirm(S.mode === 'pvp' ? 'End the game? The player to move concedes.'
+                                : 'Resign this game?')) return;
+  S.winner = 1 - loser;
+  S.reason = 'resign';
+  selCard = selPiece = null;
+  render();
+  save();
+}
+
 /* ---------- online play (relay client; see core/online.js) ---------- */
 
 function netStatusTxt(msg) {
@@ -873,6 +895,9 @@ function onNetEvents(evs) {
       commitMove(p.mv);
       if (i < evs.length - 1) animateMove = null;  // replaying: animate the newest only
       netPending = false;
+    } else if (p.type === 'resign' && S && S.mode === 'online' && S.winner === null) {
+      S.winner = 1 - evs[i].seat;
+      S.reason = 'resign';
     }
   }
   render();
@@ -1183,6 +1208,7 @@ function render() {
   wbox.appendChild(wc);
 
   $('undoBtn').disabled = !canUndo();
+  $('resignBtn').disabled = !S || S.winner !== null || thinking;
 
   const overlay = $('overlay');
   if (S.winner !== null) {
@@ -1195,7 +1221,8 @@ function render() {
       const name = isAi ? (S.winner === aiP ? '🤖 AI' : 'You')
                  : isNet ? (S.winner === S.my_seat ? 'You' : 'Opponent')
                         : (S.winner === 0 ? '⚪ White' : '⚫ Black');
-      msg = `${name === 'You' ? 'You win' : name + ' wins'} — captured every enemy piece!`;
+      const why = S.reason === 'resign' ? 'by resignation!' : 'captured every enemy piece!';
+      msg = `${name === 'You' ? 'You win' : name + ' wins'} — ${why}`;
     }
     for (const id of ['winMsgTop', 'winMsgBottom']) {
       const el = $(id);
@@ -1242,6 +1269,7 @@ $('levelSeg').addEventListener('click', e => {
   save();
 });
 $('undoBtn').addEventListener('click', undo);
+$('resignBtn').addEventListener('click', resign);
 $('undoBtn2').addEventListener('click', undo);
 $('resumeBtn').addEventListener('click', () => $('menu').classList.add('hidden'));
 $('menuBtn').addEventListener('click', () => {
