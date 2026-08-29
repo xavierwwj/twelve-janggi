@@ -1,0 +1,1125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#232527">
+<title>Card Chess 카드 체스</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    /* scratched charcoal table (fig 3) */
+    background: #323435;
+    background-image: radial-gradient(ellipse at 30% 20%, rgba(255,255,255,.045), transparent 55%),
+                      radial-gradient(ellipse at 75% 80%, rgba(0,0,0,.25), transparent 60%);
+    color: #eee;
+    font-family: system-ui, -apple-system, sans-serif;
+    height: 100vh;
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    touch-action: manipulation;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+  }
+  #app {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 8px;
+    min-height: 0;
+  }
+
+  /* ---- hand bars (a player's two cards) ---- */
+  .hand-bar {
+    flex-shrink: 0;
+    width: min(94vw, 440px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 6px 10px;
+    border-radius: 12px;
+    border: 2px solid #4a4d52;
+    background: rgba(20, 21, 26, .55);
+    transition: border-color .2s, box-shadow .2s;
+  }
+  .hand-bar.active { border-color: #e0c040; box-shadow: 0 0 14px rgba(224,192,64,.3); }
+  .hand-bar.flipped { transform: rotate(180deg); }
+  .bar-side { display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 74px; }
+  .player-chip {
+    font-weight: 700;
+    font-size: 13px;
+    padding: 3px 10px;
+    border-radius: 999px;
+    white-space: nowrap;
+  }
+  .player-chip.c0 { background: #d7d2cb; color: #232527; }
+  .player-chip.c1 { background: #232527; color: #d7d2cb; border: 1px solid #57595e; }
+  .first-badge {
+    font-size: 11px; font-weight: 800;
+    width: 20px; height: 20px; line-height: 20px; text-align: center;
+    border-radius: 50%;
+    border: 1.5px solid #d7d2cb; color: #d7d2cb;
+  }
+  .turn-tag { font-size: 11px; color: #e0c040; font-weight: 600; white-space: nowrap; visibility: hidden; }
+  .hand-bar.active .turn-tag { visibility: visible; }
+  .hand-cards { display: flex; gap: 10px; }
+
+  /* ---- cards (fig 2: black frame, silver double border, X crest, diagram, name) ---- */
+  .mcard {
+    background: linear-gradient(170deg, #17181c, #0c0d10);
+    border: 1px solid #8f9296;
+    box-shadow: inset 0 0 0 2px #0c0d10, inset 0 0 0 3px #6f7276, 0 2px 6px rgba(0,0,0,.5);
+    border-radius: 7px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: space-between;
+    padding: 3px 4px 4px;
+    cursor: pointer;
+    position: relative;
+    transition: outline-color .15s, transform .15s;
+    outline: 3px solid transparent;
+  }
+  .mcard.size-m { width: 78px; height: 106px; }
+  .mcard.size-s { width: 56px; height: 76px; }
+  .mcard.selected { outline-color: #e0c040; transform: translateY(-3px); }
+  .mcard.dim { opacity: .55; cursor: default; }
+  .mcard .crest {
+    font-size: 8px; font-weight: 700; color: #cfd3d8; line-height: 1;
+    width: 0; height: 0; text-align: center;
+    border-left: 9px solid transparent; border-right: 9px solid transparent;
+    border-top: 11px solid #26282d;
+    position: relative;
+  }
+  .mcard .crest span { position: absolute; top: -11px; left: -4px; font-size: 8px; }
+  .mcard.size-s .crest { display: none; }
+  .diagram {
+    display: grid;
+    gap: 1px;
+    background: #3c3f45;
+    border: 1px solid #3c3f45;
+  }
+  .diagram .dc { background: #101114; }
+  .diagram .dc.b { background: radial-gradient(circle, #7295c9 20%, #4d6ea3 75%); }
+  .diagram .dc.y { background: radial-gradient(circle, #f2d472 20%, #cfa72e 75%); }
+  .diagram .dc.r { background: radial-gradient(circle, #a02020 20%, #7a1c1c 75%); }
+  .mcard .cname {
+    font-size: 10px; font-weight: 700; color: #e8e6df;
+    white-space: nowrap; line-height: 1.15; text-align: center;
+  }
+  .mcard .cname .en { display: block; font-size: 8px; font-weight: 600; color: #9a9da3; }
+  .mcard.size-s .cname { font-size: 9px; }
+  .mcard.size-s .cname .en { display: none; }
+  .mcard.pop { animation: cardpop .35s ease; }
+  @keyframes cardpop { from { transform: scale(.6); opacity: .2; } to { transform: scale(1); opacity: 1; } }
+
+  /* ---- wait strip ---- */
+  #waitStrip {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  #waitTile {
+    background: linear-gradient(170deg, #e3ddd0, #c9c2b2);
+    color: #3a3c40;
+    font-weight: 800;
+    letter-spacing: 3px;
+    font-size: 12px;
+    padding: 6px 12px;
+    border-radius: 3px;
+    box-shadow: 0 2px 5px rgba(0,0,0,.5);
+    writing-mode: vertical-lr; text-orientation: upright;
+  }
+
+  /* ---- board (fig 1: navy squares, white grid, double-line frame, crowns) ---- */
+  #boardFrame {
+    flex-shrink: 0;
+    position: relative;
+    background: #262a3d;
+    border: 2px solid #e8eaf2;
+    box-shadow: 0 6px 26px rgba(0,0,0,.55);
+    padding: 30px 9px;
+    width: min(92vw, calc(100dvh - 408px), 430px);
+  }
+  #board {
+    display: grid;
+    grid-template-rows: repeat(5, 1fr);
+    grid-template-columns: repeat(5, 1fr);
+    gap: 1.5px;
+    padding: 1.5px;
+    background: #cfd3e0;
+    aspect-ratio: 1 / 1;
+  }
+  .cell {
+    background: #1f2130;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+  }
+  .cell.selected { background: #e8e6df; }
+  .cell.dest { background: #d9b83a; }
+  .cell.leapt { background: #8a2323; }
+  .cell.last-from { box-shadow: inset 0 0 0 2px rgba(251,229,140,.28); }
+  .cell.last-from::after {
+    content: '';
+    position: absolute;
+    top: 50%; left: 50%;
+    width: 55%; height: 55%;
+    transform: translate(-50%, -50%);
+    border: 2px dashed rgba(251,229,140,.45);
+    border-radius: 10px;
+  }
+  .cell.last-to { box-shadow: inset 0 0 0 3px rgba(251,229,140,.7); }
+  .piece.moved svg {
+    filter: drop-shadow(0 3px 3px rgba(0,0,0,.65)) drop-shadow(0 0 7px rgba(251,229,140,.6));
+  }
+  .piece.sliding { z-index: 5; }
+  .piece svg { transform-origin: 50% 68%; }
+  .piece.morphing svg { animation: morphpop .28s ease; }
+  .piece.cannon-ghost { position: absolute; z-index: 4; }
+  .piece.cannon-ghost.mirrored { transform: scaleX(-1); }
+  .piece.cannon-ghost.fired svg { animation: recoil .3s ease-out; }
+  .piece.cannon-ghost.vanishing svg { animation: vanish .24s ease forwards; }
+  .piece svg.launched { animation: hoparc .5s ease-in-out; }
+  @keyframes hoparc {
+    0%, 100% { transform: translateY(0) scale(1); }
+    50% { transform: translateY(-60%) scale(1.3); }
+  }
+  @keyframes recoil {
+    30% { transform: translate(-7%, 4%) rotate(-5deg); }
+    100% { transform: none; }
+  }
+  @keyframes vanish {
+    to { transform: scale(.4); opacity: 0; }
+  }
+  @keyframes morphpop {
+    0% { transform: scale(.5); opacity: .25; }
+    65% { transform: scale(1.14); }
+    100% { transform: scale(1); opacity: 1; }
+  }
+  .crown {
+    position: absolute;
+    left: 50%;
+    width: 30px; height: 22px;
+    transform: translateX(-50%);
+    opacity: .95;
+    pointer-events: none;
+  }
+  .crown.top { top: 4px; transform: translateX(-50%) rotate(180deg); }
+  .crown.bottom { bottom: 4px; }
+
+  /* ---- pieces: quatrefoil token + facing arrow (fig 1) ---- */
+  .piece { width: 96%; height: 96%; position: relative; }
+  .piece svg { width: 100%; height: 100%; display: block; filter: drop-shadow(0 3px 3px rgba(0,0,0,.65)); }
+  .arrow-shaft { fill: url(#agrad); stroke: #6e5510; stroke-width: 2; stroke-linejoin: round; }
+  .arrow-spin { transform-box: view-box; transform-origin: 50% 50%; }
+  .arrow-spin.flipping { animation: flipspin .6s ease; }
+  @keyframes flipspin { from { transform: rotate(180deg); } to { transform: rotate(0deg); } }
+
+  /* ---- corner buttons ---- */
+  .corner-btn {
+    position: fixed;
+    bottom: 12px;
+    width: 40px; height: 40px;
+    border-radius: 50%;
+    border: 1px solid #55585d;
+    background: #2b2d31;
+    color: #d6d3d1;
+    font-size: 17px;
+    cursor: pointer;
+    z-index: 20;
+  }
+  #menuBtn { left: 12px; }
+  #undoBtn {
+    left: 60px;
+    width: auto;
+    padding: 0 16px;
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 1px;
+  }
+  #rulesBtn { right: 12px; }
+  .corner-btn:disabled { opacity: .35; cursor: default; }
+
+  /* compact layout for short phones (e.g. iPhone SE) so the fixed corner
+     buttons clear the bottom hand bar */
+  @media (max-height: 700px) {
+    #app { gap: 6px; padding: 6px; }
+    .hand-bar { padding: 4px 8px; }
+    .mcard.size-m { width: 64px; height: 88px; }
+    .mcard.size-s { width: 48px; height: 68px; }
+    #waitTile { font-size: 10px; padding: 5px 9px; letter-spacing: 2px; }
+    #boardFrame { width: min(92vw, calc(100dvh - 410px), 430px); padding: 24px 8px; }
+    .corner-btn { width: 36px; height: 36px; font-size: 15px; bottom: 8px; }
+    #undoBtn { left: 54px; font-size: 12px; }
+  }
+
+  /* ---- toast ---- */
+  #toast {
+    position: fixed;
+    top: 14px; left: 50%;
+    transform: translateX(-50%);
+    background: #17181c;
+    border: 1px solid #e0c040;
+    color: #fbe58c;
+    font-weight: 700;
+    font-size: 14px;
+    padding: 10px 18px;
+    border-radius: 999px;
+    z-index: 40;
+    transition: opacity .4s;
+    pointer-events: none;
+  }
+  #toast.hidden { opacity: 0; }
+
+  /* ---- modals ---- */
+  .modal {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,.82);
+    z-index: 30;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 18px;
+  }
+  .modal.hidden { display: none; }
+  .card {
+    background: #2b2d31;
+    border: 1px solid #55585d;
+    border-radius: 16px;
+    padding: 22px 24px;
+    width: min(92vw, 390px);
+    max-height: 85dvh;
+    overflow-y: auto;
+  }
+
+  /* menu */
+  #menuCard { text-align: center; }
+  #menuCard h1 { margin: 0; font-size: 30px; letter-spacing: 4px; }
+  #menuCard .sub { margin: 2px 0 18px; color: #b9bcc2; font-size: 14px; }
+  .menu-btn {
+    display: block;
+    width: 100%;
+    margin: 10px 0;
+    padding: 13px;
+    font-size: 16px;
+    font-weight: 700;
+    border: none;
+    border-radius: 10px;
+    background: #e0c040;
+    color: #1c1917;
+    cursor: pointer;
+  }
+  .menu-btn.alt { background: #414449; color: #f1efe8; }
+  .seg { display: flex; gap: 6px; margin-top: 14px; justify-content: center; }
+  .seg span { font-size: 13px; color: #b9bcc2; align-self: center; margin-right: 4px; }
+  .seg button {
+    padding: 7px 14px;
+    font-size: 13px;
+    font-weight: 600;
+    border-radius: 999px;
+    border: 1px solid #55585d;
+    background: transparent;
+    color: #d6d3d1;
+    cursor: pointer;
+  }
+  .seg button.on { background: #e0c040; color: #1c1917; border-color: #e0c040; }
+  #resumeBtn { margin-top: 16px; background: none; border: none; color: #b9bcc2; font-size: 14px; cursor: pointer; text-decoration: underline; }
+  #resumeBtn.hidden { display: none; }
+
+  /* draft */
+  #draftCard { text-align: center; }
+  #draftCard h2 { margin: 0 0 4px; font-size: 20px; }
+  #draftCard .sub { color: #b9bcc2; font-size: 13px; margin-bottom: 14px; }
+  #draftRow { display: flex; gap: 7px; justify-content: center; margin: 8px 0 4px; }
+  .draft-slot { display: flex; flex-direction: column; align-items: center; gap: 5px; }
+  .zone-chip {
+    font-size: 10px; font-weight: 800; letter-spacing: .5px;
+    padding: 3px 0; width: 56px; text-align: center;
+    border-radius: 999px;
+    border: 1px solid #55585d; color: #797d83;
+  }
+  .zone-chip.zb { background: #232527; color: #d7d2cb; border-color: #6a6d72; }
+  .zone-chip.zw { background: #d7d2cb; color: #232527; border-color: #d7d2cb; }
+  .zone-chip.zwait { background: #c9c2b2; color: #3a3c40; border-color: #c9c2b2; }
+  #draftMsg { font-size: 12px; color: #b9bcc2; min-height: 16px; margin-top: 8px; }
+  #draftConfirm:disabled { opacity: .4; cursor: default; }
+
+  /* win overlay */
+  #overlay {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,.78);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: space-around;
+    z-index: 25;
+  }
+  #overlay.hidden { display: none; }
+  .win-msg { font-size: clamp(20px, 6vmin, 30px); font-weight: 800; text-align: center; padding: 0 16px; }
+  .win-msg.flipped { transform: rotate(180deg); }
+  .win-msg.hidden { visibility: hidden; }
+  .win-msg.w0 { color: #e8e6df; }
+  .win-msg.w1 { color: #b9bcc2; }
+  .win-msg.w2 { color: #e0c040; }
+  #overlay .row { display: flex; gap: 12px; }
+  #overlay button {
+    font-size: 17px;
+    font-weight: 700;
+    padding: 12px 26px;
+    border-radius: 999px;
+    border: none;
+    cursor: pointer;
+  }
+  #againBtn { background: #e0c040; color: #1c1917; }
+  #undoBtn2, #changeBtn { background: #414449; color: #f1efe8; }
+  #undoBtn2.hidden { display: none; }
+
+  /* rules */
+  #rulesCard { font-size: 14px; line-height: 1.55; width: min(92vw, 470px); }
+  #rulesCard h2 { margin-top: 0; font-size: 18px; }
+  #rulesCard h3 { margin: 14px 0 6px; font-size: 14px; color: #e0c040; text-transform: uppercase; letter-spacing: 1px; }
+  #rulesCard ul { padding-left: 18px; margin: 8px 0; }
+  #rulesCard table { border-collapse: collapse; width: 100%; margin: 8px 0; }
+  #rulesCard th, #rulesCard td { border: 1px solid #55585d; padding: 5px 8px; text-align: left; font-size: 13px; }
+  #rulesCard th { background: #232527; }
+  #rulesCard td.pc { text-align: center; white-space: nowrap; font-weight: 700; }
+  #rulesCard td.pc .diagram { margin: 3px auto 4px; }
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <linearGradient id="pbody0" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#f0eae0"/><stop offset=".55" stop-color="#c9c1b5"/><stop offset="1" stop-color="#8f867c"/>
+    </linearGradient>
+    <linearGradient id="pbody1" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#5f5b58"/><stop offset=".55" stop-color="#3a3735"/><stop offset="1" stop-color="#191817"/>
+    </linearGradient>
+    <linearGradient id="agrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fdeaa4"/><stop offset="1" stop-color="#ddb337"/>
+    </linearGradient>
+  </defs>
+</svg>
+
+<div id="app">
+  <div class="hand-bar" id="bar1">
+    <div class="bar-side">
+      <span class="player-chip c1" id="chip1">⚫ Black</span>
+      <span class="turn-tag" id="tag1">▶ your turn</span>
+    </div>
+    <div class="hand-cards" id="handCards1"></div>
+  </div>
+
+  <div id="waitStrip">
+    <div id="waitTile">WAIT</div>
+    <div id="waitCardBox"></div>
+  </div>
+
+  <div id="boardFrame">
+    <svg class="crown top" viewBox="0 0 100 74"><path fill="#e8eaf2" d="M8 64 L8 28 L30 44 L50 12 L70 44 L92 28 L92 64 Z M8 74 L92 74 L92 68 L8 68 Z"/></svg>
+    <svg class="crown bottom" viewBox="0 0 100 74"><path fill="#e8eaf2" d="M8 64 L8 28 L30 44 L50 12 L70 44 L92 28 L92 64 Z M8 74 L92 74 L92 68 L8 68 Z"/></svg>
+    <div id="board"></div>
+  </div>
+
+  <div class="hand-bar" id="bar0">
+    <div class="bar-side">
+      <span class="player-chip c0" id="chip0">⚪ White</span>
+      <span class="first-badge" title="moves first">선</span>
+      <span class="turn-tag" id="tag0">▶ your turn</span>
+    </div>
+    <div class="hand-cards" id="handCards0"></div>
+  </div>
+</div>
+
+<button class="corner-btn" id="menuBtn" title="New game / mode">↺</button>
+<button class="corner-btn" id="undoBtn" title="Undo move">UNDO</button>
+<button class="corner-btn" id="rulesBtn" title="Rules">?</button>
+
+<div id="toast" class="hidden"></div>
+
+<div id="menu" class="modal">
+  <div class="card" id="menuCard">
+    <h1>카드 체스</h1>
+    <div class="sub">Card Chess</div>
+    <button class="menu-btn" id="btnPvp">👥 &nbsp;2 Players</button>
+    <button class="menu-btn alt" id="btnAiWhite">🤖 &nbsp;vs AI — you play White</button>
+    <button class="menu-btn alt" id="btnAiBlack">🤖 &nbsp;vs AI — you play Black &amp; draft</button>
+    <div class="seg" id="levelSeg">
+      <span>AI level</span>
+      <button data-level="easy">Easy</button>
+      <button data-level="normal" class="on">Normal</button>
+      <button data-level="hard">Hard</button>
+    </div>
+    <button class="menu-btn alt" id="btnRules">📖 &nbsp;Rules</button>
+    <button id="resumeBtn" class="hidden">resume game</button>
+  </div>
+</div>
+
+<div id="draftModal" class="modal hidden">
+  <div class="card" id="draftCard">
+    <h2 id="draftTitle">Black drafts the cards</h2>
+    <div class="sub" id="draftSub">Tap each card to cycle: Black · White · Wait. Black keeps 2, White gets 2, 1 waits. White moves first.</div>
+    <div id="draftRow"></div>
+    <div id="draftMsg"></div>
+    <button class="menu-btn" id="draftConfirm" disabled>Start game</button>
+  </div>
+</div>
+
+<div id="overlay" class="hidden">
+  <div class="win-msg flipped" id="winMsgTop"></div>
+  <div class="row">
+    <button id="againBtn">Play again</button>
+    <button id="undoBtn2">Undo</button>
+    <button id="changeBtn">Menu</button>
+  </div>
+  <div class="win-msg" id="winMsgBottom"></div>
+</div>
+
+<div id="rulesModal" class="modal hidden">
+  <div class="card" id="rulesCard">
+    <h2 id="rulesTitle"></h2>
+
+    <h3>How to play</h3>
+    <ul>
+      <li>Tap one of <b>your two cards</b>, then a piece — legal squares light
+        <b style="color:#e0c040">yellow</b> (for the Jumper, the piece being leapt lights
+        <b style="color:#c0392b">red</b>) — then tap the destination.</li>
+      <li>Your played card goes to the <b>WAIT</b> tile and the waiting card joins your hand.</li>
+      <li>Buttons: <b>↺</b> menu &nbsp;·&nbsp; <b>UNDO</b> take back a move &nbsp;·&nbsp; <b>?</b> rules.</li>
+    </ul>
+
+    <div id="rulesBody"></div>
+    <p style="text-align:center; margin-bottom:0">
+      <button id="closeRulesBtn" class="menu-btn" style="display:inline-block;width:auto;padding:9px 26px">Close</button>
+    </p>
+  </div>
+</div>
+
+<!-- bump ?v= when these files change so browsers drop their cached copies -->
+<script src="../../core/engine.js?v=1"></script>
+<script src="../../core/negamax.js?v=1"></script>
+<script src="engine.js?v=1"></script>
+<script>
+'use strict';
+
+/* UI layer only. All rules live in games/card-chess/engine.js (the engine
+   API), all search in core/negamax.js (generic agent). */
+
+const G = new CardChess();
+const { N, KOR } = G;
+const EN = { rook: 'Rook', bishop: 'Bishop', attacker: 'Attacker',
+             knight: 'Knight', jumper: 'Jumper', queen: 'Queen' };
+
+// card movement diagrams (fig 2): y = own square, b = destination,
+// r = the adjacent piece being leapt over (jumper only)
+const DIAGRAMS = {
+  rook:     ['.b.', 'byb', '.b.'],
+  bishop:   ['b.b', '.y.', 'b.b'],
+  attacker: ['.b.', 'bbb', '.y.'],
+  knight:   ['.b.b.', 'b...b', '..y..', 'b...b', '.b.b.'],
+  jumper:   ['b.b.b', '.rrr.', 'bryrb', '.rrr.', 'b.b.b'],
+  queen:    ['bbb', 'byb', 'bbb'],
+};
+
+// agent presets (UI concern: how strong each menu option is).
+// Each move samples a tolerance from |Normal(marginMean, marginStd)| and
+// plays a random move within it of the best — frequent small mistakes,
+// rarer big ones. Calibrated by self-play (py/tune.py): easy blunders a
+// piece roughly once every 8 turns, normal makes small positional
+// mistakes but hangs a piece almost never. Hard is deterministic.
+const LEVELS = {
+  easy:   { maxDepth: 2, timeMs: 300,  marginMean: 120, marginStd: 50 },
+  normal: { maxDepth: 4, timeMs: 800,  marginMean: 38,  marginStd: 16 },
+  hard:   { maxDepth: 9, timeMs: 2000 },
+};
+
+const $ = id => document.getElementById(id);
+const SAVE_KEY = 'card-chess-v1';
+
+let S = null;            // engine state + .mode, .ai_player, .level, .last, .lastFlip
+let selCard = null;      // one of the current player's two card names
+let selPiece = null;     // board index of the selected piece
+let thinking = false;    // AI is computing
+let level = 'normal';
+let lastConfig = null;   // {mode, human} for "play again"
+let history = [];        // snapshots taken before each applied move
+let draftCtx = null;     // {mode, human, assign: {card: 'b'|'w'|'wait'|null}, locked}
+
+function snapshot() {
+  const c = G.cloneState(S);
+  c.mode = S.mode;
+  c.ai_player = S.ai_player;
+  c.level = S.level;
+  c.last = S.last ? S.last.slice() : [];
+  c.lastFlip = S.lastFlip;
+  return c;
+}
+
+function save() {
+  try { localStorage.setItem(SAVE_KEY, JSON.stringify({ S, level, lastConfig, history })); }
+  catch (e) { /* storage unavailable (private mode etc.) — play on without saving */ }
+}
+
+function restore() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(SAVE_KEY));
+    if (saved && saved.S && Array.isArray(saved.S.board)) {
+      S = saved.S;
+      level = saved.level || 'normal';
+      lastConfig = saved.lastConfig || null;
+      history = Array.isArray(saved.history) ? saved.history : [];
+      document.querySelectorAll('#levelSeg button').forEach(b =>
+        b.classList.toggle('on', b.dataset.level === level));
+      return true;
+    }
+  } catch (e) { /* corrupt or unavailable — start fresh */ }
+  return false;
+}
+
+/* ---------- game flow ---------- */
+
+function startGame(mode, human, draft) {
+  if (thinking) return;
+  S = G.initialState(0, draft);
+  S.mode = mode;                                  // 'pvp' | 'ai'
+  S.ai_player = mode === 'ai' ? 1 - human : null; // AI takes the other colour
+  S.level = level;
+  S.last = [];
+  S.lastFlip = null;
+  lastConfig = { mode, human };
+  history = [];
+  selCard = selPiece = null;
+  $('menu').classList.add('hidden');
+  $('draftModal').classList.add('hidden');
+  render();
+  save();
+  maybeAI();
+}
+
+function hadQueen() {
+  return S.cards[0].includes('queen') || S.cards[1].includes('queen') || S.waitCard === 'queen';
+}
+
+const MORPH_MS = 280;   // transform-into-card pose, played motionless
+const SLIDE_MS = 500;   // the glide between squares
+
+let animateMove = null; // {from, to, card} consumed by the next render
+let animUntil = 0;      // performance.now() when the current animation ends
+
+function commitMove(mv) {
+  animateMove = { from: mv.from, to: mv.to, card: mv.card };
+  const before = S.board[mv.from].facing;
+  const q0 = hadQueen();
+  history.push(snapshot());
+  G.applyMove(S, mv);
+  S.last = [mv.from, mv.to];
+  S.lastFlip = (S.board[mv.to] && S.board[mv.to].facing !== before) ? mv.to : null;
+  if (!q0 && hadQueen()) toast('점퍼 → 퀸 · Jumper upgraded to Queen!');
+}
+
+function maybeAI() {
+  if (!S || S.winner !== null || S.mode !== 'ai' || S.turn !== S.ai_player) return;
+  thinking = true;  // locks input now; the re-render waits for the animation
+  const wait = Math.max(60, animUntil - performance.now() + 80);
+  setTimeout(() => {
+    render();  // shows the "thinking…" indicator
+    // let it paint before the search blocks the thread
+    setTimeout(() => {
+      const mv = Negamax.chooseMove(G, S, LEVELS[S.level || level] || LEVELS.normal);
+      if (mv) commitMove(mv);
+      thinking = false;
+      render();
+      save();
+    }, 60);
+  }, wait);
+}
+
+function playMove(mv) {
+  commitMove(mv);
+  selCard = selPiece = null;
+  render();
+  save();
+  maybeAI();
+}
+
+/* Undo one ply in PvP; in vs-AI, rewind to the last position where it was
+   the human's turn (i.e. takes back the AI's reply and your move). */
+function canUndo() {
+  if (!S || thinking || !history.length) return false;
+  if (S.mode === 'ai') return history.some(h => h.turn !== S.ai_player);
+  return true;
+}
+
+function undo() {
+  if (!canUndo()) return;
+  let idx = history.length - 1;
+  if (S.mode === 'ai') {
+    while (idx >= 0 && history[idx].turn === S.ai_player) idx--;
+  }
+  S = history[idx];
+  history.length = idx;
+  selCard = selPiece = null;
+  render();
+  save();
+}
+
+let toastTimer = null;
+function toast(msg) {
+  const el = $('toast');
+  el.textContent = msg;
+  el.classList.remove('hidden');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.add('hidden'), 2600);
+}
+
+/* ---------- draft phase ---------- */
+
+function openDraft(mode, human, aiAssign) {
+  draftCtx = { mode, human, assign: {}, locked: !!aiAssign };
+  for (const c of G.CARDS) draftCtx.assign[c] = null;
+  if (aiAssign) Object.assign(draftCtx.assign, aiAssign);
+  $('draftTitle').textContent = aiAssign ? 'The AI drafted the cards'
+    : (mode === 'ai' ? 'You draft the cards (Black)' : 'Black drafts the cards');
+  $('draftSub').textContent = aiAssign
+    ? 'Black keeps 2, you get 2, 1 waits. You are White — you move first.'
+    : 'Tap each card to cycle: Black · White · Wait. Black keeps 2, White gets 2, 1 waits. White moves first.';
+  $('menu').classList.add('hidden');
+  $('draftModal').classList.remove('hidden');
+  renderDraft();
+}
+
+function cycleZone(card) {
+  if (draftCtx.locked) return;
+  const order = [null, 'b', 'w', 'wait'];
+  const cur = draftCtx.assign[card];
+  draftCtx.assign[card] = order[(order.indexOf(cur) + 1) % 4];
+  renderDraft();
+}
+
+function draftCounts() {
+  const n = { b: 0, w: 0, wait: 0 };
+  for (const c of G.CARDS) if (draftCtx.assign[c]) n[draftCtx.assign[c]]++;
+  return n;
+}
+
+function renderDraft() {
+  const row = $('draftRow');
+  row.innerHTML = '';
+  for (const c of G.CARDS) {
+    const slot = document.createElement('div');
+    slot.className = 'draft-slot';
+    const el = cardEl(c, 's');
+    const z = draftCtx.assign[c];
+    const chip = document.createElement('div');
+    chip.className = 'zone-chip' + (z ? ' z' + z : '');
+    chip.textContent = z === 'b' ? 'BLACK' : z === 'w' ? 'WHITE' : z === 'wait' ? 'WAIT' : '—';
+    slot.append(el, chip);
+    if (!draftCtx.locked) slot.addEventListener('click', () => cycleZone(c));
+    row.appendChild(slot);
+  }
+  const n = draftCounts();
+  $('draftConfirm').disabled = !(n.b === 2 && n.w === 2 && n.wait === 1);
+  $('draftMsg').textContent = draftCtx.locked ? ''
+    : `Black ${n.b}/2 · White ${n.w}/2 · Wait ${n.wait}/1`;
+}
+
+function confirmDraft() {
+  const cards = [[], []];
+  let waitCard = null;
+  for (const c of G.CARDS) {
+    const z = draftCtx.assign[c];
+    if (z === 'w') cards[0].push(c);
+    else if (z === 'b') cards[1].push(c);
+    else waitCard = c;
+  }
+  startGame(draftCtx.mode, draftCtx.human, { cards, waitCard });
+}
+
+function aiDraftAndStart() {
+  $('menu').classList.add('hidden');
+  toast('🤖 AI is drafting…');
+  setTimeout(() => {
+    const draft = chooseCardChessDraft(G, LEVELS[level]);
+    const assign = {};
+    for (const c of G.CARDS) {
+      assign[c] = draft.cards[1].includes(c) ? 'b' : draft.cards[0].includes(c) ? 'w' : 'wait';
+    }
+    $('toast').classList.add('hidden');
+    // show the AI's assignment for review; Start button launches the game
+    openDraft('ai', 0, assign);
+  }, 80);
+}
+
+/* ---------- interaction ---------- */
+
+function locked() {
+  return thinking || !S || S.winner !== null
+      || (S.mode === 'ai' && S.turn === S.ai_player);
+}
+
+function onCard(player, card) {
+  if (locked() || player !== S.turn) return;
+  selCard = selCard === card ? null : card;
+  render();
+}
+
+function onCell(i) {
+  if (locked()) return;
+  const p = S.board[i];
+  if (selCard && selPiece !== null && G.cardDests(S, selPiece, selCard).includes(i)) {
+    playMove({ card: selCard, from: selPiece, to: i });
+    return;
+  }
+  if (p && p.owner === S.turn) {
+    selPiece = selPiece === i ? null : i;
+    if (selPiece !== null && !selCard) toast('Pick one of your two cards');
+  } else {
+    selPiece = null;
+  }
+  render();
+}
+
+/* ---------- rendering ---------- */
+
+function diagramEl(card) {
+  const rows = DIAGRAMS[card];
+  const n = rows.length;
+  const d = document.createElement('div');
+  d.className = 'diagram';
+  const cellPx = n === 3 ? 13 : 8.5;
+  d.style.gridTemplateColumns = `repeat(${n}, ${cellPx}px)`;
+  d.style.gridTemplateRows = `repeat(${n}, ${cellPx}px)`;
+  for (const row of rows) {
+    for (const ch of row) {
+      const c = document.createElement('div');
+      c.className = 'dc' + (ch === '.' ? '' : ' ' + ch);
+      d.appendChild(c);
+    }
+  }
+  return d;
+}
+
+function cardEl(card, size) {
+  const el = document.createElement('div');
+  el.className = 'mcard size-' + size;
+  const crest = document.createElement('div');
+  crest.className = 'crest';
+  crest.innerHTML = '<span>✕</span>';
+  const name = document.createElement('div');
+  name.className = 'cname';
+  name.innerHTML = KOR[card] + '<span class="en">' + EN[card] + '</span>';
+  el.append(crest, diagramEl(card), name);
+  return el;
+}
+
+// which piece a mover morphs into while travelling with each card
+const CARD_SHAPE = { rook: 'rook', bishop: 'bishop', knight: 'knight',
+                     queen: 'queen', jumper: 'pao', attacker: 'swordsman' };
+
+// piece silhouettes (viewBox 100), all sharing the same two-step base
+function bodySvg(kind, stroke) {
+  const base = '<rect x="28" y="80" width="44" height="10" rx="3.5"/>' +
+               '<rect x="33" y="72" width="34" height="8" rx="3"/>';
+  switch (kind) {
+    case 'rook': return base +
+      '<path d="M41 46 L59 46 L62 72 L38 72 Z"/>' +
+      '<path d="M34 46 L34 26 L41 26 L41 33 L46 33 L46 26 L54 26 L54 33 L59 33 L59 26 L66 26 L66 46 Z"/>';
+    case 'bishop': return base +
+      '<path d="M44 50 L56 50 L61.5 72 L38.5 72 Z"/>' +
+      '<rect x="38" y="44" width="24" height="6" rx="3"/>' +
+      '<path d="M50 18 C60 26 61 36 50 46 C39 36 40 26 50 18 Z"/>' +
+      '<circle cx="50" cy="14" r="4"/>';
+    case 'knight': return base +  // traced from the owner's Staunton reference:
+      // vertical chest, rolled mouth-corner, chin, straight nose-to-ear face
+      // edge, ear, one convex neck sweep down to a wide base; inner mane line
+      '<path d="M34 72 C33 65 36 55 43 47 C44.5 45 45 43.5 44 42 C42.5 40.8 40.5 41 39 41.6 L31.5 43 C29.8 43.2 29.4 40.5 29.7 37.5 C29.2 34.5 29.3 32.8 29.7 31.2 L44 10.5 L48.5 13.2 L52.5 13.8 C62 17.5 67.5 29 68.2 46 C68.6 55 68.7 64 68.7 72 Z"/>' +
+      '<path d="M53.5 16.5 C62 22 66 32 66.5 46 C66.8 54 66.8 62 66.8 70" fill="none" stroke-width="1.5" opacity=".55"/>';
+    case 'queen': return base +
+      '<path d="M43 48 L57 48 L61.5 72 L38.5 72 Z"/>' +
+      '<rect x="37" y="42" width="26" height="6.5" rx="3"/>' +
+      '<path d="M37 40 L34 20 L43 28 L50 14 L57 28 L66 20 L63 40 Z"/>' +
+      '<circle cx="34" cy="18" r="2.5"/><circle cx="50" cy="12" r="2.5"/><circle cx="66" cy="18" r="2.5"/>';
+    case 'pao': return base +  // a cannon — barrel on a wheeled carriage
+      '<path d="M34 72 L39 54 L56 54 L61 72 Z"/>' +
+      '<g transform="rotate(-35 42 54)">' +
+        '<rect x="30" y="48" width="48" height="12" rx="5"/>' +
+        '<rect x="74" y="45" width="7" height="18" rx="2.5"/>' +
+      '</g>' +
+      '<circle cx="47" cy="58" r="13"/>' +
+      '<circle cx="47" cy="58" r="4" fill="' + stroke + '" stroke="none"/>';
+    case 'swordsman': return base +
+      '<path d="M40 72 L40 54 L60 54 L60 72 L53 72 L53 62 L47 62 L47 72 Z"/>' +
+      '<path d="M39 54 L41 32 L57 32 L59 54 Z"/>' +
+      '<circle cx="47" cy="23" r="8"/>' +
+      '<path d="M55 36 L64 52 L59 55 L52 42 Z"/>' +
+      '<path d="M67 6 L71 14 L70 52 L64 52 L63 14 Z"/>' +
+      '<rect x="59" y="52" width="16" height="5" rx="2"/>' +
+      '<rect x="64.5" y="57" width="5" height="12" rx="2"/>';
+    default: return base +  // pawn
+      '<path d="M44 48 L56 48 L61.5 72 L38.5 72 Z"/>' +
+      '<rect x="37" y="42" width="26" height="6.5" rx="3"/>' +
+      '<circle cx="50" cy="30.5" r="12"/>';
+  }
+}
+
+function pieceEl(p, idx, kind = 'pawn') {
+  const el = document.createElement('div');
+  el.className = 'piece';
+  const flip = S && S.lastFlip === idx ? ' flipping' : '';
+  const stroke = p.owner === 0 ? '#57504a' : '#84878c';
+  el.innerHTML =
+    '<svg viewBox="0 0 100 100">' +
+      '<g fill="url(#pbody' + p.owner + ')" stroke="' + stroke + '" stroke-width="2" stroke-linejoin="round">' +
+        bodySvg(kind, stroke) +
+      '</g>' +
+      (kind === 'pao' ? '' :
+        '<ellipse cx="45.5" cy="26" rx="4.5" ry="2.8" fill="#fff" opacity="' +
+          (p.owner === 0 ? '.5' : '.22') + '" transform="rotate(-32 45.5 26)"/>') +
+      // facing arrow at the faced edge, drawn over the piece so it never hides
+      '<g class="arrow-spin' + flip + '">' +
+        '<g transform="rotate(' + p.facing * 90 + ' 50 50)">' +
+          '<path class="arrow-shaft" d="M50 2 L63 17 L55 17 L55 27 L45 27 L45 17 L37 17 Z"/>' +
+        '</g>' +
+      '</g>' +
+    '</svg>';
+  return el;
+}
+
+function render() {
+  if (!S) return;
+  const boardEl = $('board');
+  boardEl.innerHTML = '';
+  let dests = [], leapt = [];
+  if (selCard && selPiece !== null && !locked()) {
+    dests = G.cardDests(S, selPiece, selCard);
+    if (selCard === 'jumper') leapt = dests.map(to => (selPiece + to) / 2);
+  }
+  for (let i = 0; i < N * N; i++) {
+    const cell = document.createElement('div');
+    cell.className = 'cell';
+    if (S.last && S.last[0] === i && !S.board[i]) cell.classList.add('last-from');
+    if (S.last && S.last[1] === i) cell.classList.add('last-to');
+    if (selPiece === i) cell.classList.add('selected');
+    if (dests.includes(i)) cell.classList.add('dest');
+    if (leapt.includes(i)) cell.classList.add('leapt');
+    if (S.board[i]) {
+      const pe = pieceEl(S.board[i], i);
+      if (S.last && S.last[1] === i) pe.classList.add('moved');
+      cell.appendChild(pe);
+    }
+    cell.addEventListener('click', () => onCell(i));
+    boardEl.appendChild(cell);
+  }
+
+  // the mover's move plays in three visible stages: it morphs into its
+  // card's piece while still on its old square, glides over, and morphs
+  // back into a pawn on landing. animUntil lets the AI wait its turn out.
+  if (animateMove) {
+    const { from, to, card } = animateMove;
+    animateMove = null;
+    const cell = boardEl.children[to];
+    const pc = S.board[to];
+    const old = cell && cell.querySelector('.piece');
+    if (cell && pc && old) {
+      // jumper: a cannon appears on the old square and launches the pawn
+      // over the leapt piece; other cards: the pawn morphs into the card's
+      // piece, glides, and morphs back
+      const launch = card === 'jumper';
+      let cannon = null;
+      if (launch) {
+        cannon = pieceEl(pc, -1, 'pao');
+        cannon.querySelector('.arrow-spin').remove();  // the pawn carries the arrow
+        cannon.classList.add('cannon-ghost', 'morphing');
+        if (to % N < from % N) cannon.classList.add('mirrored');  // aim leftward
+        boardEl.children[from].appendChild(cannon);
+      }
+      const mover = pieceEl(pc, to, launch ? 'pawn' : (CARD_SHAPE[card] || 'pawn'));
+      mover.classList.add('moved', 'sliding');
+      if (launch) mover.style.opacity = '0';  // loaded in the cannon until the shot
+      else mover.classList.add('morphing');
+      cell.replaceChild(mover, old);
+      // offset in grid units, sized off the piece's own box (96% of a cell,
+      // 1.5px gaps) so it stays correct whatever the current layout size
+      const dc = (from % N) - (to % N);
+      const dr = Math.floor(from / N) - Math.floor(to / N);
+      mover.style.transform =
+        `translate(calc(${dc} * (104.167% + 1.5px)), calc(${dr} * (104.167% + 1.5px)))`;
+      animUntil = performance.now() + MORPH_MS + SLIDE_MS + MORPH_MS + 120;
+      setTimeout(() => {
+        mover.style.transition = `transform ${SLIDE_MS}ms cubic-bezier(.25, .8, .35, 1)`;
+        mover.style.transform = '';
+        if (launch) {
+          mover.style.opacity = '';                               // out of the muzzle
+          mover.querySelector('svg').classList.add('launched');  // ballistic arc
+          cannon.classList.add('fired');                          // recoil kick
+        }
+      }, MORPH_MS);
+      setTimeout(() => {
+        if (cannon) {
+          cannon.classList.add('vanishing');
+          setTimeout(() => cannon.remove(), 260);
+        }
+        if (mover.parentNode === cell) {  // skip if a re-render replaced it
+          const pawn = pieceEl(pc, to, 'pawn');
+          pawn.classList.add('moved', 'morphing');
+          cell.replaceChild(pawn, mover);
+        }
+      }, MORPH_MS + SLIDE_MS + 40);
+    }
+  }
+
+  const isAi = S.mode === 'ai';
+  const aiP = S.ai_player;
+  $('bar1').classList.toggle('flipped', !isAi);
+  $('chip0').textContent = isAi && aiP === 0 ? '🤖 AI · ⚪ White' : '⚪ White';
+  $('chip1').textContent = isAi && aiP === 1 ? '🤖 AI · ⚫ Black' : '⚫ Black';
+  for (const player of [0, 1]) {
+    const mine = !isAi || player !== aiP;
+    $('tag' + player).textContent =
+      mine ? '▶ your turn' : (thinking ? '🤔 thinking…' : '▶ AI turn');
+    $('bar' + player).classList.toggle('active', S.winner === null && S.turn === player);
+    const box = $('handCards' + player);
+    box.innerHTML = '';
+    for (const card of S.cards[player]) {
+      const el = cardEl(card, 'm');
+      if (S.winner === null && S.turn === player && mine && !thinking) {
+        if (selCard === card) el.classList.add('selected');
+        el.addEventListener('click', () => onCard(player, card));
+      } else {
+        el.classList.add('dim');
+      }
+      box.appendChild(el);
+    }
+  }
+
+  const wbox = $('waitCardBox');
+  wbox.innerHTML = '';
+  const wc = cardEl(S.waitCard, 's');
+  wc.classList.add('dim', 'pop');
+  wbox.appendChild(wc);
+
+  $('undoBtn').disabled = !canUndo();
+
+  const overlay = $('overlay');
+  if (S.winner !== null) {
+    $('undoBtn2').classList.toggle('hidden', !canUndo());
+    let msg;
+    if (S.winner === 2) {
+      msg = S.reason === 'repetition' ? 'Draw — threefold repetition'
+                                      : 'Draw — stalemate: no legal move';
+    } else {
+      const name = isAi ? (S.winner === aiP ? '🤖 AI' : 'You')
+                        : (S.winner === 0 ? '⚪ White' : '⚫ Black');
+      msg = `${name === 'You' ? 'You win' : name + ' wins'} — captured every enemy piece!`;
+    }
+    for (const id of ['winMsgTop', 'winMsgBottom']) {
+      const el = $(id);
+      el.textContent = msg;
+      el.classList.remove('w0', 'w1', 'w2');
+      el.classList.add('w' + S.winner);
+    }
+    $('winMsgTop').classList.toggle('hidden', isAi);
+    overlay.classList.remove('hidden');
+  } else {
+    overlay.classList.add('hidden');
+  }
+}
+
+/* ---------- wiring ---------- */
+
+$('btnPvp').addEventListener('click', () => openDraft('pvp', 0));
+$('btnAiWhite').addEventListener('click', aiDraftAndStart);
+$('btnAiBlack').addEventListener('click', () => openDraft('ai', 1));
+$('draftConfirm').addEventListener('click', confirmDraft);
+$('levelSeg').addEventListener('click', e => {
+  const btn = e.target.closest('button[data-level]');
+  if (!btn) return;
+  level = btn.dataset.level;
+  document.querySelectorAll('#levelSeg button').forEach(b => b.classList.toggle('on', b === btn));
+  save();
+});
+$('undoBtn').addEventListener('click', undo);
+$('undoBtn2').addEventListener('click', undo);
+$('resumeBtn').addEventListener('click', () => $('menu').classList.add('hidden'));
+$('menuBtn').addEventListener('click', () => {
+  $('resumeBtn').classList.toggle('hidden', !S || S.winner !== null);
+  $('draftModal').classList.add('hidden');
+  $('menu').classList.remove('hidden');
+});
+$('againBtn').addEventListener('click', () => {
+  if (!lastConfig) return;
+  $('overlay').classList.add('hidden');
+  if (lastConfig.mode === 'ai' && lastConfig.human === 0) aiDraftAndStart();
+  else openDraft(lastConfig.mode, lastConfig.human);
+});
+$('changeBtn').addEventListener('click', () => {
+  $('overlay').classList.add('hidden');
+  $('resumeBtn').classList.add('hidden');
+  $('menu').classList.remove('hidden');
+});
+$('rulesBtn').addEventListener('click', () => $('rulesModal').classList.remove('hidden'));
+$('btnRules').addEventListener('click', () => $('rulesModal').classList.remove('hidden'));
+$('closeRulesBtn').addEventListener('click', () => $('rulesModal').classList.add('hidden'));
+
+// build the rules modal from the engine's display metadata (G.rules),
+// inlining each card's movement diagram next to its name
+function buildRules() {
+  $('rulesTitle').textContent = G.rules.title;
+  const body = $('rulesBody');
+  body.innerHTML = '';
+  for (const sec of G.rules.sections) {
+    const h = document.createElement('h3');
+    h.textContent = sec.heading;
+    body.appendChild(h);
+    if (sec.table) {
+      const tbl = document.createElement('table');
+      tbl.innerHTML = '<tr>' + sec.table.headers.map(x => `<th>${x}</th>`).join('') + '</tr>';
+      for (const r of sec.table.rows) {
+        const tr = document.createElement('tr');
+        const td = document.createElement('td');
+        td.className = 'pc';
+        const cardKey = r[0].split(' ')[0].toLowerCase();
+        if (DIAGRAMS[cardKey]) td.appendChild(diagramEl(cardKey));
+        td.appendChild(document.createTextNode(r[0]));
+        tr.appendChild(td);
+        for (const c of r.slice(1)) {
+          const td2 = document.createElement('td');
+          td2.innerHTML = c;
+          tr.appendChild(td2);
+        }
+        tbl.appendChild(tr);
+      }
+      body.appendChild(tbl);
+    }
+    if (sec.items) {
+      const list = document.createElement('ul');
+      list.innerHTML = sec.items.map(x => `<li>${x}</li>`).join('');
+      body.appendChild(list);
+    }
+  }
+}
+buildRules();
+
+// restore a saved game (if any) behind the menu; offer resume if it's still live
+if (restore()) {
+  $('resumeBtn').classList.toggle('hidden', S.winner !== null);
+  render();
+  maybeAI();  // in case the page closed mid-"thinking"
+}
+</script>
+</body>
+</html>

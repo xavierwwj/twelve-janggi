@@ -4,7 +4,7 @@
 
 ## Play
 
-The game is fully static — **open `games/twelve-janggi/index.html` in a browser** (or serve the repo with any static host; the root `index.html` is a menu linking to both games). No backend. Saved games persist in localStorage.
+The game is fully static — **open `games/twelve-janggi/index.html` in a browser** (or serve the repo with any static host; the root `index.html` is a menu linking to all games). No backend. Saved games persist in localStorage.
 
 On a phone, use the GitHub Pages deployment of this repo, and "Add to Home Screen" for an app-like experience.
 
@@ -35,6 +35,51 @@ The red dots on each tile show its move directions.
   1. Capture the enemy 王.
   2. Move your own 王 into the opponent's territory and survive your opponent's next move.
   3. Your opponent has no legal move (house rule; practically unreachable).
+
+---
+
+# Card Chess 카드 체스
+
+A third Genius death match in this repo: a 5×5 capture-everything duel where **five movement
+cards** (Onitama-style) decide how your pieces move. Fully static like Twelve Janggi — **open
+`games/card-chess/index.html`** or use the root menu. 2-player hot-seat and vs AI
+(Easy / Normal / Hard) with UNDO, rules dialog, and localStorage persistence.
+
+## Rules
+
+- 5×5 board, 5 identical pieces per side: **white fills the bottom row, black the top row**,
+  every piece **facing** the enemy (the yellow arrow is game state, not decoration).
+- **Draft:** black alone assigns the five cards — Rook, Bishop, Attacker, Knight, Jumper —
+  entirely as it pleases: 2 to itself, 2 to white, 1 to the wait slot (open information).
+  As compensation, **white moves first**.
+- **Your turn:** play one of your two cards and make one move that card allows with one of
+  your pieces. Landing on an enemy captures it (no hands or drops). Your played card goes to
+  the wait slot; the card that was waiting joins your hand — you always hold exactly two.
+
+| Card | Moves |
+|------|-------|
+| Rook 룩 | 1 step orthogonally |
+| Bishop 비숍 | 1 step diagonally |
+| Attacker 어태커 | 1 or 2 straight ahead, or 1 diagonally ahead — relative to the piece's facing. The 2-ahead move needs an **empty** square 1 ahead (either colour blocks); capturing 1 ahead is fine |
+| Knight 나이트 | chess knight jump (jumps over anything) |
+| Jumper 점퍼 | leap over **any adjacent piece — yours or theirs** — landing directly beyond; the leapt piece is **not** captured |
+| Queen 퀸 | 1 step in any direction — see upgrade below |
+
+- **180° rotation:** a piece that lands on the far edge it is currently facing turns around
+  (arrow and all). Any card's move triggers this, and since the trigger follows the *current*
+  facing, a piece can flip back again later. Only the Attacker's moves depend on facing.
+- **Queen upgrade:** the moment only 2 pieces remain on the board (1v1), the Jumper card
+  immediately becomes the Queen — wherever it sits, even entering the wait slot after making
+  the capture itself.
+- **Game end:** capture all enemy pieces to win (the only win condition). No legal move with
+  either card = stalemate, an immediate **draw**. The same full position (board + facings +
+  card locations + side to move) occurring three times = **draw** by repetition.
+
+The engine lives in `games/card-chess/engine.js` with a rule-identical Python mirror in
+`py/card_chess.py` (`python3 -m unittest test_card_chess` covers the fine print above);
+the same negamax agent as Twelve Janggi plays it, with Easy/Normal mistake margins
+calibrated by `py/tune.py` self-play. In vs-AI, the AI drafts by scoring all 30 possible
+card assignments with a shallow search.
 
 ---
 
